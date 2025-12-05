@@ -404,6 +404,16 @@ class DockManagementUI:
                     break
                 
                 frame_counter += 1
+                self.fps_frame_count += 1  # Count ALL frames for FPS (including skipped ones)
+                
+                # Calculate FPS (count all frames read, not just processed ones)
+                current_time = time.time()
+                elapsed = current_time - last_fps_update
+                if elapsed >= self.fps_update_interval:
+                    self.current_fps = self.fps_frame_count / elapsed
+                    self.fps_frame_count = 0
+                    last_fps_update = current_time
+                    self.root.after(0, lambda: self.fps_label.config(text=f"FPS: {self.current_fps:.1f}"))
                 
                 # Skip frames based on FRAME_SKIP setting
                 if frame_skip > 1 and frame_counter % frame_skip != 0:
@@ -468,9 +478,9 @@ class DockManagementUI:
                     break
                 
                 frame_counter += 1
-                self.fps_frame_count += 1
+                self.fps_frame_count += 1  # Count ALL frames for FPS (including skipped ones)
                 
-                # Calculate FPS
+                # Calculate FPS (count all frames read, not just processed ones)
                 current_time = time.time()
                 elapsed = current_time - last_fps_update
                 if elapsed >= self.fps_update_interval:
@@ -530,6 +540,10 @@ class DockManagementUI:
         frame_skip = config.FRAME_SKIP if config.FRAME_SKIP > 0 else 1
         frame_counter = 0
         
+        # FPS calculation for all frames read (including skipped ones)
+        last_fps_update = time.time()
+        fps_frame_count = 0
+        
         while self.is_running:
             if self.cap is None or not self.cap.isOpened():
                 break
@@ -540,6 +554,17 @@ class DockManagementUI:
                 break
             
             frame_counter += 1
+            fps_frame_count += 1  # Count ALL frames for FPS (including skipped ones)
+            
+            # Calculate FPS (count all frames read, not just processed ones)
+            current_time = time.time()
+            elapsed = current_time - last_fps_update
+            if elapsed >= self.fps_update_interval:
+                self.current_fps = fps_frame_count / elapsed
+                fps_frame_count = 0
+                last_fps_update = current_time
+                # Update FPS label in main thread
+                self.root.after(0, lambda: self.fps_label.config(text=f"FPS: {self.current_fps:.1f}"))
             
             # Skip frames based on FRAME_SKIP setting
             if frame_skip > 1 and frame_counter % frame_skip != 0:
@@ -564,8 +589,7 @@ class DockManagementUI:
     
     def detection_processing_loop(self):
         """Thread 2: Process frames from queue, perform detection, put results in result queue"""
-        last_fps_update = time.time()
-        fps_frame_count = 0
+        # Note: FPS is calculated in frame_reading_loop to count all frames (including skipped ones)
         
         if self.enable_batch_processing and self.batch_size > 1:
             # Batch processing mode
@@ -613,16 +637,7 @@ class DockManagementUI:
                         # Draw detections on frame
                         annotated_frame = self.draw_detections(frame.copy(), detections)
                         
-                        # Calculate FPS (count each frame)
-                        fps_frame_count += 1
-                        current_time = time.time()
-                        elapsed = current_time - last_fps_update
-                        if elapsed >= self.fps_update_interval:
-                            self.current_fps = fps_frame_count / elapsed
-                            fps_frame_count = 0
-                            last_fps_update = current_time
-                        
-                        # Put result in queue
+                        # Put result in queue (FPS is calculated in frame_reading_loop)
                         result = {
                             'frame': annotated_frame,
                             'detection_summary': detection_summary,
@@ -669,16 +684,7 @@ class DockManagementUI:
                     # Draw detections on frame
                     annotated_frame = self.draw_detections(frame.copy(), detections)
                     
-                    # Calculate FPS
-                    fps_frame_count += 1
-                    current_time = time.time()
-                    elapsed = current_time - last_fps_update
-                    if elapsed >= self.fps_update_interval:
-                        self.current_fps = fps_frame_count / elapsed
-                        fps_frame_count = 0
-                        last_fps_update = current_time
-                    
-                    # Put result in queue (non-blocking, drop if queue is full)
+                    # Put result in queue (FPS is calculated in frame_reading_loop)
                     result = {
                         'frame': annotated_frame,
                         'detection_summary': detection_summary,
