@@ -24,7 +24,7 @@ ZONE_CONFIG_FILE = "zone_config.json"
 ZONE_COORDINATES = None  # Will be loaded from JSON or set manually
 PARKING_LINE_POINTS = None  # Will be loaded from JSON or set manually
 PARKING_LINE_WAIT_TIME = 10  # Wait time in seconds before turning green after truck touches parking line
-PARKING_LINE_GRACE_PERIOD = 3  # Number of consecutive "not touching" detections before resetting timer (prevents timer reset due to frame skipping or detection flicker)
+PARKING_LINE_GRACE_PERIOD = 50  # Number of consecutive "not touching" detections before resetting timer (prevents timer reset due to frame skipping or detection flicker)
 
 # Load zone configuration from JSON if it exists
 def load_zone_config():
@@ -53,11 +53,11 @@ def load_zone_config():
 load_zone_config()
 
 # UI Configuration
-WINDOW_WIDTH = 800
-WINDOW_HEIGHT = 600
+WINDOW_WIDTH = 1400
+WINDOW_HEIGHT = 800
 SIGNAL_SIZE = 100
 UPDATE_INTERVAL = 100  # milliseconds
-FRAME_SKIP = 1  # Process every Nth frame (1 = every frame, 2 = every 2nd frame, etc.) - Higher = faster but less smooth
+FRAME_SKIP = 0  # Process every Nth frame (1 = every frame, 2 = every 2nd frame, etc.) - Higher = faster but less smooth
 
 # Multi-threading Configuration
 ENABLE_MULTITHREADING = True  # Enable separate threads for frame reading, detection processing, and UI updates
@@ -67,7 +67,7 @@ MAX_RESULT_QUEUE_SIZE = 3  # Maximum results in detection result queue
 # Batch Processing Configuration
 ENABLE_BATCH_PROCESSING = True  # Enable batch processing to increase FPS (works with or without multi-threading)
 BATCH_SIZE = 8  # Number of frames to process together (1 = no batching, 2-8 recommended for GPU, 1-2 for CPU)
-BATCH_TIMEOUT = 0.5  # Maximum time (seconds) to wait for collecting a batch before processing available frames
+BATCH_TIMEOUT = 0.1  # Maximum time (seconds) to wait for collecting a batch before processing available frames
 
 # Validate batch processing configuration
 if ENABLE_BATCH_PROCESSING and BATCH_SIZE < 1:

@@ -30,7 +30,9 @@ class DockManagementUI:
         # UI Components
         self.root = None
         self.video_label = None
-        self.signal_canvas = None
+        self.red_light_canvas = None
+        self.yellow_light_canvas = None
+        self.green_light_canvas = None
         self.status_label = None
         self.info_text = None
         
@@ -71,57 +73,125 @@ class DockManagementUI:
         }
         
         self.setup_ui()
+        # Auto-start video when UI is ready
+        self.root.after(100, self.start_detection)
     
     def setup_ui(self):
         """Setup the user interface"""
         self.root = tk.Tk()
         self.root.title("Dock Management System")
-        self.root.geometry(f"{config.WINDOW_WIDTH}x{config.WINDOW_HEIGHT}")
+        # Larger window for side-by-side layout
+        self.root.geometry("1400x800")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        # Main container
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        # Configure root grid
+        self.root.columnconfigure(0, weight=2)  # Video takes 2/3 of space
+        self.root.columnconfigure(1, weight=1)  # Status/Info takes 1/3 of space
+        self.root.rowconfigure(0, weight=1)
         
-        # Video display frame
-        video_frame = ttk.LabelFrame(main_frame, text="Camera Feed", padding="5")
-        video_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        # Main container - no padding for full screen usage
+        main_frame = ttk.Frame(self.root)
+        main_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
+        main_frame.columnconfigure(0, weight=2)  # Video column
+        main_frame.columnconfigure(1, weight=1)  # Status/Info column
+        main_frame.rowconfigure(0, weight=1)
         
-        self.video_label = tk.Label(video_frame, bg="black", width=640, height=480)
-        self.video_label.pack()
+        # ========== LEFT SIDE: VIDEO FEED ==========
+        video_frame = ttk.LabelFrame(main_frame, text="Video Feed", padding="5")
+        video_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=5)
+        video_frame.columnconfigure(0, weight=1)
+        video_frame.rowconfigure(0, weight=1)
         
-        # Control panel
-        control_frame = ttk.LabelFrame(main_frame, text="Status", padding="5")
-        control_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=5)
+        self.video_label = tk.Label(video_frame, bg="black")
+        self.video_label.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Signal indicator
-        signal_frame = ttk.Frame(control_frame)
-        signal_frame.pack(pady=10)
+        # ========== RIGHT SIDE: STATUS AND DETECTION INFO ==========
+        right_panel = ttk.Frame(main_frame)
+        right_panel.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=5)
+        right_panel.columnconfigure(0, weight=1)
+        right_panel.rowconfigure(0, weight=1)  # Status frame
+        right_panel.rowconfigure(1, weight=2)  # Detection info frame (takes more space)
         
-        ttk.Label(signal_frame, text="Dock Status:", font=("Arial", 12, "bold")).pack()
+        # ========== STATUS BOX (TOP RIGHT) ==========
+        status_frame = ttk.LabelFrame(right_panel, text="Status", padding="10")
+        status_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 5))
+        status_frame.columnconfigure(0, weight=1)
         
-        self.signal_canvas = tk.Canvas(
-            signal_frame, 
-            width=config.SIGNAL_SIZE, 
-            height=config.SIGNAL_SIZE,
+        # Signal lights container
+        signal_container = ttk.Frame(status_frame)
+        signal_container.pack(pady=10)
+        
+        ttk.Label(signal_container, text="Dock Status", font=("Arial", 14, "bold")).pack(pady=(0, 15))
+        
+        # Three signal lights (Red, Yellow, Green)
+        lights_frame = ttk.Frame(signal_container)
+        lights_frame.pack()
+        
+        # Red light with label
+        red_container = ttk.Frame(lights_frame)
+        red_container.pack(side=tk.LEFT, padx=10)
+        self.red_light_canvas = tk.Canvas(
+            red_container,
+            width=80,
+            height=80,
             bg="white",
             highlightthickness=2,
             highlightbackground="black"
         )
-        self.signal_canvas.pack(pady=10)
-        self.update_signal("OFF")
+        self.red_light_canvas.pack()
+        ttk.Label(red_container, text="RED", font=("Arial", 10, "bold")).pack(pady=(5, 0))
+        
+        # Yellow light with label
+        yellow_container = ttk.Frame(lights_frame)
+        yellow_container.pack(side=tk.LEFT, padx=10)
+        self.yellow_light_canvas = tk.Canvas(
+            yellow_container,
+            width=80,
+            height=80,
+            bg="white",
+            highlightthickness=2,
+            highlightbackground="black"
+        )
+        self.yellow_light_canvas.pack()
+        ttk.Label(yellow_container, text="YELLOW", font=("Arial", 10, "bold")).pack(pady=(5, 0))
+        
+        # Green light with label
+        green_container = ttk.Frame(lights_frame)
+        green_container.pack(side=tk.LEFT, padx=10)
+        self.green_light_canvas = tk.Canvas(
+            green_container,
+            width=80,
+            height=80,
+            bg="white",
+            highlightthickness=2,
+            highlightbackground="black"
+        )
+        self.green_light_canvas.pack()
+        ttk.Label(green_container, text="GREEN", font=("Arial", 10, "bold")).pack(pady=(5, 0))
+        
+        # Initialize all lights to OFF
+        self.update_signal_lights("OFF")
         
         # Status label
         self.status_label = ttk.Label(
-            control_frame, 
-            text="Status: Initializing...", 
-            font=("Arial", 10)
+            status_frame,
+            text="Status: Initializing...",
+            font=("Arial", 11, "bold")
         )
-        self.status_label.pack(pady=5)
+        self.status_label.pack(pady=10)
+        
+        # Wait time label (for parking line countdown)
+        self.wait_time_label = ttk.Label(
+            status_frame,
+            text="",
+            font=("Arial", 10),
+            foreground="orange"
+        )
+        self.wait_time_label.pack(pady=5)
         
         # FPS label
         self.fps_label = ttk.Label(
-            control_frame,
+            status_frame,
             text="FPS: 0.0",
             font=("Arial", 9),
             foreground="blue"
@@ -134,102 +204,75 @@ class DockManagementUI:
         if torch.cuda.is_available():
             device_info += f" ({torch.cuda.get_device_name(0)})"
         self.device_label = ttk.Label(
-            control_frame,
+            status_frame,
             text=f"Device: {device_info}",
             font=("Arial", 8),
             foreground="green" if torch.cuda.is_available() else "gray"
         )
         self.device_label.pack(pady=2)
         
-        # Multi-threading status label
-        threading_status = "Enabled" if config.ENABLE_MULTITHREADING else "Disabled"
-        self.threading_label = ttk.Label(
-            control_frame,
-            text=f"Multi-threading: {threading_status}",
-            font=("Arial", 8),
-            foreground="green" if config.ENABLE_MULTITHREADING else "gray"
-        )
-        self.threading_label.pack(pady=2)
+        # ========== DETECTION INFO (BOTTOM RIGHT) ==========
+        info_frame = ttk.LabelFrame(right_panel, text="Detection Info", padding="5")
+        info_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 0))
+        info_frame.columnconfigure(0, weight=1)
+        info_frame.rowconfigure(0, weight=1)
         
-        # Batch processing status label
-        batch_status = f"Enabled (Batch: {config.BATCH_SIZE})" if config.ENABLE_BATCH_PROCESSING else "Disabled"
-        self.batch_label = ttk.Label(
-            control_frame,
-            text=f"Batch Processing: {batch_status}",
-            font=("Arial", 8),
-            foreground="green" if config.ENABLE_BATCH_PROCESSING else "gray"
-        )
-        self.batch_label.pack(pady=2)
-        
-        # Wait time label (for parking line countdown)
-        self.wait_time_label = ttk.Label(
-            control_frame,
-            text="",
-            font=("Arial", 9),
-            foreground="orange"
-        )
-        self.wait_time_label.pack(pady=2)
-        
-        # Info text
-        info_frame = ttk.LabelFrame(main_frame, text="Detection Info", padding="5")
-        info_frame.grid(row=1, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=5)
-        
-        self.info_text = tk.Text(info_frame, width=30, height=15, wrap=tk.WORD)
-        self.info_text.pack(fill=tk.BOTH, expand=True)
+        self.info_text = tk.Text(info_frame, wrap=tk.WORD, font=("Arial", 9))
+        self.info_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         scrollbar = ttk.Scrollbar(info_frame, orient=tk.VERTICAL, command=self.info_text.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
         self.info_text.config(yscrollcommand=scrollbar.set)
-        
-        # Control buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=10)
-        
-        self.start_button = ttk.Button(button_frame, text="Start", command=self.start_detection)
-        self.start_button.pack(side=tk.LEFT, padx=5)
-        
-        self.stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_detection, state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(button_frame, text="Configure Zone", command=self.configure_zone).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Exit", command=self.on_closing).pack(side=tk.LEFT, padx=5)
-        
-        # Configure grid weights
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(0, weight=1)
-        main_frame.rowconfigure(1, weight=1)
     
-    def update_signal(self, state):
+    def update_signal_lights(self, state):
         """
-        Update signal indicator
+        Update signal indicator lights (all three: red, yellow, green)
         Args:
             state: 'RED', 'YELLOW', 'GREEN', or 'OFF'
         """
-        self.signal_canvas.delete("all")
-        color = self.colors.get(state, self.colors['OFF'])
+        # Helper function to draw a light
+        def draw_light(canvas, color, is_active):
+            canvas.delete("all")
+            margin = 8
+            if is_active:
+                # Active light - bright color
+                fill_color = color
+                outline_color = "black"
+                outline_width = 3
+            else:
+                # Inactive light - dim gray
+                fill_color = "#404040"  # Dark gray
+                outline_color = "#808080"
+                outline_width = 2
+            
+            canvas.create_oval(
+                margin, margin,
+                80 - margin,
+                80 - margin,
+                fill=fill_color,
+                outline=outline_color,
+                width=outline_width
+            )
+            
+            # Add glow effect for active light
+            if is_active:
+                canvas.create_oval(
+                    margin + 5, margin + 5,
+                    80 - margin - 5,
+                    80 - margin - 5,
+                    fill="",
+                    outline=fill_color,
+                    width=1
+                )
         
-        # Draw circle
-        margin = 10
-        self.signal_canvas.create_oval(
-            margin, margin,
-            config.SIGNAL_SIZE - margin,
-            config.SIGNAL_SIZE - margin,
-            fill=color,
-            outline="black",
-            width=2
-        )
-        
-        # Draw state text
-        self.signal_canvas.create_text(
-            config.SIGNAL_SIZE // 2,
-            config.SIGNAL_SIZE // 2,
-            text=state,
-            font=("Arial", 12, "bold"),
-            fill="black" if state != "YELLOW" else "black"
-        )
+        # Update each light based on state
+        draw_light(self.red_light_canvas, "#FF0000", state == "RED")
+        draw_light(self.yellow_light_canvas, "#FFFF00", state == "YELLOW")
+        draw_light(self.green_light_canvas, "#00FF00", state == "GREEN")
+    
+    def update_signal(self, state):
+        """Wrapper for backward compatibility"""
+        self.update_signal_lights(state)
     
     def update_info(self, detection_summary, state):
         """Update information text"""
@@ -281,8 +324,7 @@ class DockManagementUI:
                 return
             
             self.is_running = True
-            self.start_button.config(state=tk.DISABLED)
-            self.stop_button.config(state=tk.NORMAL)
+            # Buttons removed, so no need to update button states
             
             if self.enable_multithreading:
                 # Multi-threaded mode: separate threads for reading, detection, and UI updates
@@ -343,9 +385,7 @@ class DockManagementUI:
         if self.cap:
             self.cap.release()
         
-        self.start_button.config(state=tk.NORMAL)
-        self.stop_button.config(state=tk.DISABLED)
-        self.update_signal("OFF")
+        self.update_signal_lights("OFF")
         self.status_label.config(text="Status: Stopped")
         self.fps_label.config(text="FPS: 0.0")
         self.fps_frame_count = 0
@@ -422,7 +462,7 @@ class DockManagementUI:
                         self.root.after(0, self.update_frame, annotated_frame, self.last_detection_summary, self.last_state)
                     else:
                         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        frame_resized = cv2.resize(frame_rgb, (640, 480))
+                        frame_resized = self._resize_frame_for_display(frame_rgb)
                         image = Image.fromarray(frame_resized)
                         photo = ImageTk.PhotoImage(image=image)
                         self.root.after(0, lambda p=photo: self._update_frame_only(p))
@@ -501,7 +541,7 @@ class DockManagementUI:
                     else:
                         # No previous detections yet, just show frame
                         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        frame_resized = cv2.resize(frame_rgb, (640, 480))
+                        frame_resized = self._resize_frame_for_display(frame_rgb)
                         image = Image.fromarray(frame_resized)
                         photo = ImageTk.PhotoImage(image=image)
                         self.root.after(0, lambda p=photo: self._update_frame_only(p))
@@ -746,6 +786,40 @@ class DockManagementUI:
                 print(f"Error in UI update: {e}")
                 continue
     
+    def _get_video_display_size(self):
+        """Get the proper display size for video frame maintaining aspect ratio"""
+        # Update the label first to get its actual size
+        self.video_label.update_idletasks()
+        video_width = self.video_label.winfo_width()
+        video_height = self.video_label.winfo_height()
+        
+        # Use default size if not yet rendered (fallback)
+        if video_width <= 1:
+            video_width = 960
+        if video_height <= 1:
+            video_height = 720
+        
+        return video_width, video_height
+    
+    def _resize_frame_for_display(self, frame_rgb):
+        """Resize frame to fit display while maintaining aspect ratio"""
+        video_width, video_height = self._get_video_display_size()
+        
+        # Maintain aspect ratio
+        frame_height, frame_width = frame_rgb.shape[:2]
+        aspect_ratio = frame_width / frame_height
+        
+        if video_width / video_height > aspect_ratio:
+            # Window is wider than video - fit to height
+            display_height = video_height
+            display_width = int(video_height * aspect_ratio)
+        else:
+            # Window is taller than video - fit to width
+            display_width = video_width
+            display_height = int(video_width / aspect_ratio)
+        
+        return cv2.resize(frame_rgb, (display_width, display_height))
+    
     def _update_frame_only(self, photo):
         """Update only the video frame without detection info (for skipped frames)"""
         self.video_label.config(image=photo)
@@ -791,17 +865,17 @@ class DockManagementUI:
     
     def update_frame(self, frame, detection_summary, state):
         """Update video frame and UI elements"""
-        # Convert frame to PhotoImage
+        # Convert frame to PhotoImage - use full available space
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_resized = cv2.resize(frame_rgb, (640, 480))
+        frame_resized = self._resize_frame_for_display(frame_rgb)
         image = Image.fromarray(frame_resized)
         photo = ImageTk.PhotoImage(image=image)
         
         self.video_label.config(image=photo)
         self.video_label.image = photo  # Keep a reference
         
-        # Update signal
-        self.update_signal(state)
+        # Update signal lights
+        self.update_signal_lights(state)
         
         # Update status with wait time if applicable
         remaining_wait = self.dock_manager.get_parking_wait_remaining()
@@ -817,13 +891,6 @@ class DockManagementUI:
         # Update info
         self.update_info(detection_summary, state)
     
-    def configure_zone(self):
-        """Open zone configuration dialog"""
-        messagebox.showinfo(
-            "Zone Configuration", 
-            "Zone configuration feature will be implemented.\n"
-            "For now, please set zone coordinates in config.py"
-        )
     
     def on_closing(self):
         """Handle window closing"""
