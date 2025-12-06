@@ -72,6 +72,18 @@ class DockManagementUI:
             'OFF': '#808080'
         }
         
+        # Error tracking and monitoring
+        self.error_stats = {
+            'frame_queue_full_count': 0,
+            'result_queue_full_count': 0,
+            'dropped_frames_count': 0,
+            'detection_errors': [],
+            'video_read_errors': 0,
+            'last_error': None,
+            'last_error_time': None
+        }
+        self.error_lock = threading.Lock()  # Thread-safe error tracking
+        
         self.setup_ui()
         # Auto-start video when UI is ready
         self.root.after(100, self.start_detection)
@@ -274,44 +286,177 @@ class DockManagementUI:
         """Wrapper for backward compatibility"""
         self.update_signal_lights(state)
     
+    def track_error(self, error_type, message=None):
+        """
+        Track errors in a thread-safe manner
+        Args:
+            error_type: 'frame_queue_full', 'result_queue_full', 'dropped_frame', 
+                       'detection_error', 'video_read_error', 'general_error'
+            message: Optional error message
+        """
+        import time
+        with self.error_lock:
+            if error_type == 'frame_queue_full':
+                self.error_stats['frame_queue_full_count'] += 1
+            elif error_type == 'result_queue_full':
+                self.error_stats['result_queue_full_count'] += 1
+            elif error_type == 'dropped_frame':
+                self.error_stats['dropped_frames_count'] += 1
+            elif error_type == 'detection_error':
+                if message:
+                    # Keep only last 10 errors
+                    self.error_stats['detection_errors'].append(str(message))
+                    if len(self.error_stats['detection_errors']) > 10:
+                        self.error_stats['detection_errors'].pop(0)
+            elif error_type == 'video_read_error':
+                self.error_stats['video_read_errors'] += 1
+            
+            # Update last error
+            if message:
+                self.error_stats['last_error'] = f"{error_type}: {message}"
+            else:
+                self.error_stats['last_error'] = error_type
+            self.error_stats['last_error_time'] = time.strftime("%H:%M:%S")
+    
+    def reset_error_stats(self):
+        """Reset all error statistics"""
+        with self.error_lock:
+            self.error_stats = {
+                'frame_queue_full_count': 0,
+                'result_queue_full_count': 0,
+                'dropped_frames_count': 0,
+                'detection_errors': [],
+                'video_read_errors': 0,
+                'last_error': None,
+                'last_error_time': None
+            }
+    
     def update_info(self, detection_summary, state):
-        """Update information text"""
+        """Update information text in compact columnar format"""
         self.info_text.delete(1.0, tk.END)
         
-        info = f"State: {state}\n\n"
-        info += f"Truck Present: {detection_summary['truck_present']}\n"
-        info += f"Truck Count: {detection_summary['truck_count']}\n"
-        info += f"Human Present: {detection_summary['human_present']}\n"
-        info += f"Human Count: {detection_summary['human_count']}\n\n"
-        
-        # Debug: Check parking line touch status
-        if detection_summary['trucks'] and self.dock_manager.zone_coordinates:
-            info += "Parking Line Status:\n"
-            for i, truck in enumerate(detection_summary['trucks']):
-                truck_bbox = truck['bbox']
-                in_zone = self.dock_manager.is_truck_in_zone(truck_bbox)
-                touching, debug_info = self.dock_manager.is_truck_touching_parking_line_debug(truck_bbox)
-                info += f"  Truck {i+1}:\n"
-                info += f"    In Zone: {in_zone}\n"
-                info += f"    Touching Line: {touching}\n"
-                if not touching and in_zone:
-                    info += f"    {debug_info}\n"
-            info += "\n"
+        # Header
+        info = f"{'='*60}\n"
+        info += f"{'DETECTION SUMMARY':^60}\n"
+        info += f"{'='*60}\n"
+        info += f"{'Truck Present':<20}| {detection_summary['truck_present']}\n"
+        info += f"{'Truck Count':<20}| {detection_summary['truck_count']}\n"
+        info += f"{'Human Present':<20}| {detection_summary['human_present']}\n"
+        info += f"{'Human Count':<20}| {detection_summary['human_count']}\n"
         
         # Timer info
         remaining_wait = self.dock_manager.get_parking_wait_remaining()
         if remaining_wait is not None:
-            info += f"Timer: {remaining_wait}s remaining\n\n"
+            info += f"{'Timer (s)':<20}| {remaining_wait}\n"
         
+        info += f"{'-'*60}\n"
+        
+        # Trucks and Humans in compact format
         if detection_summary['trucks']:
-            info += "Trucks:\n"
+            info += f"{'TRUCKS':^60}\n"
             for i, truck in enumerate(detection_summary['trucks']):
-                info += f"  Truck {i+1}: {truck['confidence']:.2f}\n"
+                truck_bbox = truck['bbox']
+                in_zone = self.dock_manager.is_truck_in_zone(truck_bbox) if self.dock_manager.zone_coordinates else False
+                touching, _ = self.dock_manager.is_truck_touching_parking_line_debug(truck_bbox) if self.dock_manager.zone_coordinates else (False, None)
+                info += f"  T{i+1}: Conf={truck['confidence']:.2f} | InZone={in_zone} | Touch={touching}\n"
         
         if detection_summary['humans']:
-            info += "\nPersons:\n"
+            info += f"{'PERSONS':^60}\n"
             for i, human in enumerate(detection_summary['humans']):
-                info += f"  Person {i+1}: {human['confidence']:.2f}\n"
+                info += f"  P{i+1}: Conf={human['confidence']:.2f}\n"
+        
+        info += f"{'-'*60}\n"
+        
+        # System Status in columns
+        info += f"{'SYSTEM STATUS':^60}\n"
+        info += f"{'-'*60}\n"
+        
+        # Queue status (if multithreading is enabled)
+        if self.enable_multithreading and self.frame_queue is not None and self.result_queue is not None:
+            frame_queue_size = self.frame_queue.qsize()
+            frame_queue_max = config.MAX_FRAME_QUEUE_SIZE
+            result_queue_size = self.result_queue.qsize()
+            result_queue_max = config.MAX_RESULT_QUEUE_SIZE
+            
+            frame_status = f"{frame_queue_size}/{frame_queue_max}"
+            if frame_queue_size >= frame_queue_max:
+                frame_status += " 🔴"
+            elif frame_queue_size >= frame_queue_max * 0.8:
+                frame_status += " ⚠️"
+            else:
+                frame_status += " ✓"
+            
+            result_status = f"{result_queue_size}/{result_queue_max}"
+            if result_queue_size >= result_queue_max:
+                result_status += " 🔴"
+            elif result_queue_size >= result_queue_max * 0.8:
+                result_status += " ⚠️"
+            else:
+                result_status += " ✓"
+            
+            info += f"{'Frame Queue':<20}| {frame_status}\n"
+            info += f"{'Result Queue':<20}| {result_status}\n"
+        
+        # Thread status
+        if self.enable_multithreading:
+            frame_thread_alive = self.frame_reading_thread and self.frame_reading_thread.is_alive()
+            detection_thread_alive = self.detection_thread and self.detection_thread.is_alive()
+            ui_thread_alive = self.ui_update_thread and self.ui_update_thread.is_alive()
+            
+            thread_status = f"{'Frame':<10}| {'✓' if frame_thread_alive else '✗'} | "
+            thread_status += f"{'Detect':<10}| {'✓' if detection_thread_alive else '✗'} | "
+            thread_status += f"{'UI':<10}| {'✓' if ui_thread_alive else '✗'}"
+            info += f"{'Threads':<20}| {thread_status}\n"
+        
+        info += f"{'-'*60}\n"
+        
+        # Error statistics in compact format
+        with self.error_lock:
+            error_stats = self.error_stats.copy()
+        
+        has_errors = (error_stats['frame_queue_full_count'] > 0 or 
+                     error_stats['result_queue_full_count'] > 0 or 
+                     error_stats['dropped_frames_count'] > 0 or 
+                     error_stats['video_read_errors'] > 0 or 
+                     len(error_stats['detection_errors']) > 0)
+        
+        if has_errors:
+            info += f"{'ERROR STATS':^60}\n"
+            info += f"{'-'*60}\n"
+            
+            error_line = []
+            if error_stats['frame_queue_full_count'] > 0:
+                error_line.append(f"FQFull:{error_stats['frame_queue_full_count']}")
+            if error_stats['result_queue_full_count'] > 0:
+                error_line.append(f"RQFull:{error_stats['result_queue_full_count']}")
+            if error_stats['dropped_frames_count'] > 0:
+                error_line.append(f"Drop:{error_stats['dropped_frames_count']}")
+            if error_stats['video_read_errors'] > 0:
+                error_line.append(f"VidErr:{error_stats['video_read_errors']}")
+            if len(error_stats['detection_errors']) > 0:
+                error_line.append(f"DetErr:{len(error_stats['detection_errors'])}")
+            
+            if error_line:
+                info += f"{'Errors':<20}| {' | '.join(error_line)}\n"
+            
+            # Last error
+            if error_stats['last_error']:
+                last_err = error_stats['last_error'][:50]  # Truncate long errors
+                if error_stats['last_error_time']:
+                    info += f"{'Last Error':<20}| {last_err} ({error_stats['last_error_time']})\n"
+                else:
+                    info += f"{'Last Error':<20}| {last_err}\n"
+            
+            # Recent errors (compact)
+            if len(error_stats['detection_errors']) > 0:
+                recent_errors = error_stats['detection_errors'][-2:]  # Last 2 errors
+                for err in recent_errors:
+                    err_short = err[:55] if len(err) > 55 else err
+                    info += f"{'  →':<20}| {err_short}\n"
+        else:
+            info += f"{'Errors':<20}| ✓ None\n"
+        
+        info += f"{'='*60}\n"
         
         self.info_text.insert(1.0, info)
     
@@ -348,7 +493,9 @@ class DockManagementUI:
                 self.detection_thread.start()
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to start detection: {str(e)}")
+            error_msg = f"Failed to start detection: {str(e)}"
+            self.track_error('general_error', error_msg)
+            messagebox.showerror("Error", error_msg)
     
     def stop_detection(self):
         """Stop video detection"""
@@ -411,6 +558,7 @@ class DockManagementUI:
                 ret, frame = self.cap.read()
                 if not ret:
                     # Process remaining frames in batch before breaking
+                    self.track_error('video_read_error', 'Failed to read frame from video source')
                     if len(batch_frames) > 0:
                         # Sync zone coordinates
                         if self.dock_manager.zone_coordinates:
@@ -515,6 +663,7 @@ class DockManagementUI:
             while self.is_running:
                 ret, frame = self.cap.read()
                 if not ret:
+                    self.track_error('video_read_error', 'Failed to read frame from video source')
                     break
                 
                 frame_counter += 1
@@ -586,11 +735,13 @@ class DockManagementUI:
         
         while self.is_running:
             if self.cap is None or not self.cap.isOpened():
+                self.track_error('video_read_error', 'Video capture is not opened or became invalid')
                 break
                 
             ret, frame = self.cap.read()
             if not ret:
                 # Video ended or error reading frame
+                self.track_error('video_read_error', 'Failed to read frame from video source')
                 break
             
             frame_counter += 1
@@ -615,8 +766,10 @@ class DockManagementUI:
                 self.frame_queue.put_nowait((frame_counter, frame))
             except queue.Full:
                 # Queue is full, drop oldest frame and add new one
+                self.track_error('frame_queue_full', f'Frame queue full at frame {frame_counter}')
                 try:
                     self.frame_queue.get_nowait()
+                    self.track_error('dropped_frame', 'Dropped oldest frame from queue')
                     self.frame_queue.put_nowait((frame_counter, frame))
                 except queue.Empty:
                     pass
@@ -689,6 +842,7 @@ class DockManagementUI:
                             self.result_queue.put_nowait(result)
                         except queue.Full:
                             # Queue is full, drop oldest result and add new one
+                            self.track_error('result_queue_full', 'Result queue full')
                             try:
                                 self.result_queue.get_nowait()
                                 self.result_queue.put_nowait(result)
@@ -696,7 +850,9 @@ class DockManagementUI:
                                 pass
                 
                 except Exception as e:
-                    print(f"Error in batch detection processing: {e}")
+                    error_msg = f"Error in batch detection processing: {e}"
+                    print(error_msg)
+                    self.track_error('detection_error', error_msg)
                     continue
         else:
             # Single frame processing mode (original logic)
@@ -736,6 +892,7 @@ class DockManagementUI:
                         self.result_queue.put_nowait(result)
                     except queue.Full:
                         # Queue is full, drop oldest result and add new one
+                        self.track_error('result_queue_full', 'Result queue full')
                         try:
                             self.result_queue.get_nowait()
                             self.result_queue.put_nowait(result)
@@ -746,7 +903,9 @@ class DockManagementUI:
                     # No frame available, continue
                     continue
                 except Exception as e:
-                    print(f"Error in detection processing: {e}")
+                    error_msg = f"Error in detection processing: {e}"
+                    print(error_msg)
+                    self.track_error('detection_error', error_msg)
                     continue
     
     def ui_update_loop(self):
@@ -783,7 +942,9 @@ class DockManagementUI:
                     pass
                 continue
             except Exception as e:
-                print(f"Error in UI update: {e}")
+                error_msg = f"Error in UI update: {e}"
+                print(error_msg)
+                self.track_error('general_error', error_msg)
                 continue
     
     def _get_video_display_size(self):
