@@ -5,6 +5,9 @@ Implements the business rules for dock state determination
 from dock_utils.helpers import is_point_in_zone
 import config
 import time
+import threading
+import urllib.request
+import urllib.error
 
 
 class DockManager:
@@ -20,6 +23,7 @@ class DockManager:
         self.zone_coordinates = zone_coordinates or config.ZONE_COORDINATES
         self.parking_line_points = parking_line_points or config.PARKING_LINE_POINTS
         self.current_state = "UNKNOWN"
+        self.previous_state = "UNKNOWN"  # Track previous state to detect changes
         self.state_history = []
         self.parking_line_touch_start_time = None  # Timestamp when truck first touched parking line
         self.wait_time_seconds = config.PARKING_LINE_WAIT_TIME
@@ -89,6 +93,7 @@ class DockManager:
         if not truck_present:
             self.parking_line_touch_start_time = None  # Reset timer
             self.current_state = "GREEN"
+            self._handle_state_change("GREEN")
             return self.current_state
         
         # Check if any truck is in zone
@@ -113,6 +118,7 @@ class DockManager:
                 self.parking_line_touch_start_time = current_time
                 # Show YELLOW while waiting
                 self.current_state = "YELLOW"
+                self._handle_state_change("YELLOW")
                 return self.current_state
             
             # Check if wait time has elapsed
@@ -120,11 +126,13 @@ class DockManager:
             if elapsed_time >= self.wait_time_seconds:
                 # Wait time elapsed, turn GREEN
                 self.current_state = "GREEN"
+                self._handle_state_change("GREEN")
                 return self.current_state
             else:
                 # Still waiting, show YELLOW with countdown
                 remaining_time = int(self.wait_time_seconds - elapsed_time)
                 self.current_state = "YELLOW"  # Will show countdown in UI
+                # Don't call API again if already YELLOW (only on state change)
                 return self.current_state
         
         # Truck not touching line - use grace period before resetting timer
@@ -140,13 +148,16 @@ class DockManager:
             if human_present:
                 # Rule 1: Violation
                 self.current_state = "RED"
+                self._handle_state_change("RED")
             else:
                 # Rule 2: Warning
                 self.current_state = "YELLOW"
+                self._handle_state_change("YELLOW")
             return self.current_state
         
         # Default: If truck exists but not in zone, consider it GREEN
         self.current_state = "GREEN"
+        self._handle_state_change("GREEN")
         return self.current_state
     
     def get_parking_wait_remaining(self):
@@ -191,3 +202,53 @@ class DockManager:
             'zone_configured': self.zone_coordinates is not None,
             'parking_line_configured': self.parking_line_points is not None
         }
+    
+    def _call_api(self, url):
+        """
+        Call API endpoint in a separate thread (non-blocking)
+        Args:
+            url: API URL to call
+        """
+        def make_request():
+            try:
+                request = urllib.request.Request(url)
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    status_code = response.getcode()
+                    if status_code == 200:
+                        print(f"✓ API call successful: {url}")
+                    else:
+                        print(f"⚠ API call returned status {status_code}: {url}")
+            except urllib.error.URLError as e:
+                print(f"✗ API call failed: {url} - Error: {e}")
+            except Exception as e:
+                print(f"✗ API call error: {url} - Error: {e}")
+        
+        # Call API in background thread to avoid blocking
+        thread = threading.Thread(target=make_request, daemon=True)
+        thread.start()
+    
+    def _handle_state_change(self, new_state):
+        """
+        Handle state changes and call appropriate APIs
+        Args:
+            new_state: New state ('RED', 'YELLOW', 'GREEN')
+        """
+        # Only call API if state actually changed and API calls are enabled
+        if not config.ENABLE_API_CALLS:
+            return
+        
+        if new_state != self.previous_state:
+            print(f"State changed: {self.previous_state} -> {new_state}")
+            
+            if new_state == "RED":
+                # Call RED API when red light glows
+                self._call_api(config.RED_API_URL)
+            elif new_state == "YELLOW":
+                # Call YELLOW API when yellow light glows
+                self._call_api(config.YELLOW_API_URL)
+            elif new_state == "GREEN":
+                # Call STOP API when green light glows
+                self._call_api(config.STOP_API_URL)
+            
+            # Update previous state
+            self.previous_state = new_state

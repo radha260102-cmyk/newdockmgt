@@ -61,13 +61,13 @@ FRAME_SKIP = 0  # Process every Nth frame (1 = every frame, 2 = every 2nd frame,
 
 # Multi-threading Configuration
 ENABLE_MULTITHREADING = True  # Enable separate threads for frame reading, detection processing, and UI updates
-MAX_FRAME_QUEUE_SIZE = 5  # Maximum frames in frame reading queue (prevents memory buildup)
-MAX_RESULT_QUEUE_SIZE = 3  # Maximum results in detection result queue
+MAX_FRAME_QUEUE_SIZE = 30  # Maximum frames in frame reading queue (prevents memory buildup) - Increased to reduce frame drops
+MAX_RESULT_QUEUE_SIZE = 10  # Maximum results in detection result queue - Increased to reduce frame drops
 
 # Batch Processing Configuration
 ENABLE_BATCH_PROCESSING = True  # Enable batch processing to increase FPS (works with or without multi-threading)
-BATCH_SIZE = 8  # Number of frames to process together (1 = no batching, 2-8 recommended for GPU, 1-2 for CPU)
-BATCH_TIMEOUT = 0.1  # Maximum time (seconds) to wait for collecting a batch before processing available frames
+BATCH_SIZE = 2  # Number of frames to process together (1 = no batching, 2-8 recommended for GPU, 1-2 for CPU) - Reduced to reduce latency
+BATCH_TIMEOUT = 0.005  # Maximum time (seconds) to wait for collecting a batch before processing available frames - Reduced to reduce latency
 
 # Validate batch processing configuration
 if ENABLE_BATCH_PROCESSING and BATCH_SIZE < 1:
@@ -75,4 +75,11 @@ if ENABLE_BATCH_PROCESSING and BATCH_SIZE < 1:
     BATCH_SIZE = 1
 
 # Video Source
+#VIDEO_SOURCE = "rtsp://admin:india123@192.168.1.64:554/Streaming/Channels/101?transportmode=unicast&streamtype=main&transport=tcp"  # 0 for webcam, or path to video file
 VIDEO_SOURCE = "3.mp4"  # 0 for webcam, or path to video file
+
+# API Configuration for Audio/Visual Alerts
+YELLOW_API_URL = "http://192.168.1.101/api/player?action=start&id=15&repeat=0&volume=2"  # API to call when YELLOW light glows
+RED_API_URL = "http://192.168.1.101/api/player?action=start&id=16&repeat=0&volume=2"  # API to call when RED light glows
+STOP_API_URL = "http://192.168.1.101/api/player?action=stop"  # API to call when GREEN light glows (stop all alerts)
+ENABLE_API_CALLS = True  # Enable/disable API calls

@@ -187,7 +187,7 @@ class DockManagementUI:
         # Status label
         self.status_label = ttk.Label(
             status_frame,
-            text="Status: Initializing...",
+            text="Status: Initializing...", 
             font=("Arial", 11, "bold")
         )
         self.status_label.pack(pady=10)
@@ -235,7 +235,7 @@ class DockManagementUI:
         scrollbar = ttk.Scrollbar(info_frame, orient=tk.VERTICAL, command=self.info_text.yview)
         scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
         self.info_text.config(yscrollcommand=scrollbar.set)
-    
+        
     def update_signal_lights(self, state):
         """
         Update signal indicator lights (all three: red, yellow, green)
@@ -614,7 +614,8 @@ class DockManagementUI:
                         image = Image.fromarray(frame_resized)
                         photo = ImageTk.PhotoImage(image=image)
                         self.root.after(0, lambda p=photo: self._update_frame_only(p))
-                    time.sleep(0.03)
+                    # Reduced sleep for RTSP streams - queues handle throttling
+                    time.sleep(0.001)
                     continue
                 
                 # Add frame to batch
@@ -695,8 +696,8 @@ class DockManagementUI:
                         photo = ImageTk.PhotoImage(image=image)
                         self.root.after(0, lambda p=photo: self._update_frame_only(p))
                     
-                    import time
-                    time.sleep(0.03)  # ~30 FPS
+                    # Reduced sleep for RTSP streams - queues handle throttling
+                    time.sleep(0.001)
                     continue
                 
                 # Sync zone coordinates with detector (in case zone was updated)
@@ -721,8 +722,9 @@ class DockManagementUI:
                 # Update UI in main thread
                 self.root.after(0, self.update_frame, annotated_frame, detection_summary, state)
                 
-                # Small delay to prevent overwhelming the system
-                time.sleep(0.03)  # ~30 FPS
+                # Minimal delay - queues and UI throttling handle rate limiting
+                # Removed 0.03s sleep to prevent lag with RTSP streams
+                time.sleep(0.001)
     
     def frame_reading_loop(self):
         """Thread 1: Continuously read frames from video source and put in queue"""
@@ -912,15 +914,24 @@ class DockManagementUI:
         """Thread 3: Get results from queue and update UI in main thread"""
         last_update_time = time.time()
         min_update_interval = 0.033  # ~30 FPS max UI update rate
+        pending_result = None  # Store result if throttled
         
         while self.is_running:
             try:
                 # Get result from queue (with timeout to allow checking is_running)
-                result = self.result_queue.get(timeout=0.1)
+                # If we have a pending result from throttling, use it first
+                if pending_result is None:
+                    result = self.result_queue.get(timeout=0.1)
+                else:
+                    result = pending_result
+                    pending_result = None
                 
                 # Throttle UI updates to prevent overwhelming the main thread
                 current_time = time.time()
                 if current_time - last_update_time < min_update_interval:
+                    # Store result for next update instead of discarding it
+                    pending_result = result
+                    time.sleep(0.001)  # Small sleep to prevent busy waiting
                     continue
                 
                 # Update UI in main thread (thread-safe)
