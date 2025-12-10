@@ -61,8 +61,8 @@ FRAME_SKIP = 0  # Process every Nth frame (1 = every frame, 2 = every 2nd frame,
 
 # Multi-threading Configuration
 ENABLE_MULTITHREADING = True  # Enable separate threads for frame reading, detection processing, and UI updates
-MAX_FRAME_QUEUE_SIZE = 30  # Maximum frames in frame reading queue (prevents memory buildup) - Increased to reduce frame drops
-MAX_RESULT_QUEUE_SIZE = 10  # Maximum results in detection result queue - Increased to reduce frame drops
+MAX_FRAME_QUEUE_SIZE = 5  # Maximum frames in frame reading queue (prevents memory buildup) - Increased to reduce frame drops
+MAX_RESULT_QUEUE_SIZE = 3  # Maximum results in detection result queue - Increased to reduce frame drops
 
 # Batch Processing Configuration
 ENABLE_BATCH_PROCESSING = True  # Enable batch processing to increase FPS (works with or without multi-threading)
@@ -75,11 +75,23 @@ if ENABLE_BATCH_PROCESSING and BATCH_SIZE < 1:
     BATCH_SIZE = 1
 
 # Video Source
-#VIDEO_SOURCE = "rtsp://admin:india123@192.168.1.64:554/Streaming/Channels/101?transportmode=unicast&streamtype=main&transport=tcp"  # 0 for webcam, or path to video file
-VIDEO_SOURCE = "3.mp4"  # 0 for webcam, or path to video file
+VIDEO_SOURCE = "rtsp://admin:india123@192.168.1.64:554/Streaming/Channels/101?transportmode=unicast&streamtype=main&transport=tcp"  # 0 for webcam, or path to video file
+#VIDEO_SOURCE = "3.mp4"  # 0 for webcam, or path to video file
 
 # API Configuration for Audio/Visual Alerts
 YELLOW_API_URL = "http://192.168.1.101/api/player?action=start&id=15&repeat=0&volume=2"  # API to call when YELLOW light glows
 RED_API_URL = "http://192.168.1.101/api/player?action=start&id=16&repeat=0&volume=2"  # API to call when RED light glows
 STOP_API_URL = "http://192.168.1.101/api/player?action=stop"  # API to call when GREEN light glows (stop all alerts)
 ENABLE_API_CALLS = True  # Enable/disable API calls
+
+# PLC Configuration (Modbus TCP)
+ENABLE_PLC = True  # Enable/disable PLC control
+PLC_HOST = "127.0.0.1"  # PLC Modbus TCP host
+PLC_PORT = 502  # PLC Modbus TCP port
+PLC_AUTO_OPEN = True  # Automatically open connection on initialization
+PLC_AUTO_CLOSE = True  # Automatically close connection on shutdown
+PLC_COIL_START_ADDRESS = 0  # Starting address for coils (adjust based on your PLC)
+# Coil configurations: [coil0, coil1, coil2, coil3, coil4, coil5, coil6, coil7]
+PLC_GREEN_LIGHT_COILS = [True, False, False, False, False, False, False, False]
+PLC_RED_LIGHT_COILS = [False, True, False, False, False, False, False, False]
+PLC_YELLOW_LIGHT_COILS = [False, False, True, False, False, False, False, False]

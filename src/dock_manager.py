@@ -13,12 +13,13 @@ import urllib.error
 class DockManager:
     """Manages dock state based on detection results"""
     
-    def __init__(self, zone_coordinates=None, parking_line_points=None):
+    def __init__(self, zone_coordinates=None, parking_line_points=None, plc_manager=None):
         """
         Initialize Dock Manager
         Args:
             zone_coordinates: List of (x, y) tuples defining the dock zone
             parking_line_points: List of (x, y) tuples defining the parking line (manually configured)
+            plc_manager: PLCManager instance (optional, will be created if None and ENABLE_PLC is True)
         """
         self.zone_coordinates = zone_coordinates or config.ZONE_COORDINATES
         self.parking_line_points = parking_line_points or config.PARKING_LINE_POINTS
@@ -29,6 +30,16 @@ class DockManager:
         self.wait_time_seconds = config.PARKING_LINE_WAIT_TIME
         self.not_touching_count = 0  # Count consecutive frames where truck is not touching (for grace period)
         self.grace_period_frames = config.PARKING_LINE_GRACE_PERIOD  # Number of consecutive "not touching" detections before resetting timer
+        
+        # Initialize PLC manager if enabled
+        if config.ENABLE_PLC:
+            if plc_manager is None:
+                from src.plc_manager import PLCManager
+                self.plc_manager = PLCManager()
+            else:
+                self.plc_manager = plc_manager
+        else:
+            self.plc_manager = None
     
     def update_zone(self, zone_coordinates):
         """Update zone coordinates"""
@@ -229,17 +240,18 @@ class DockManager:
     
     def _handle_state_change(self, new_state):
         """
-        Handle state changes and call appropriate APIs
+        Handle state changes and call appropriate APIs and update PLC
         Args:
             new_state: New state ('RED', 'YELLOW', 'GREEN')
         """
-        # Only call API if state actually changed and API calls are enabled
-        if not config.ENABLE_API_CALLS:
+        # Only process if state actually changed
+        if new_state == self.previous_state:
             return
         
-        if new_state != self.previous_state:
-            print(f"State changed: {self.previous_state} -> {new_state}")
-            
+        print(f"State changed: {self.previous_state} -> {new_state}")
+        
+        # Call APIs if enabled
+        if config.ENABLE_API_CALLS:
             if new_state == "RED":
                 # Call RED API when red light glows
                 self._call_api(config.RED_API_URL)
@@ -249,6 +261,15 @@ class DockManager:
             elif new_state == "GREEN":
                 # Call STOP API when green light glows
                 self._call_api(config.STOP_API_URL)
-            
-            # Update previous state
-            self.previous_state = new_state
+        
+        # Update PLC coils (works independently of API calls, runs in separate thread)
+        if self.plc_manager:
+            self.plc_manager.update_state(new_state)
+        
+        # Update previous state
+        self.previous_state = new_state
+    
+    def cleanup(self):
+        """Cleanup resources, stop PLC manager"""
+        if self.plc_manager:
+            self.plc_manager.stop()

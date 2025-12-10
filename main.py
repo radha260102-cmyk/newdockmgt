@@ -73,6 +73,13 @@ def main():
         print(f"\nERROR: {str(e)}")
         import traceback
         traceback.print_exc()
+    finally:
+        # Cleanup resources
+        try:
+            if 'dock_manager' in locals():
+                dock_manager.cleanup()
+        except:
+            pass
 
 
 if __name__ == "__main__":
