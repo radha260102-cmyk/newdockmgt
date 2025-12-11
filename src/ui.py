@@ -34,6 +34,7 @@ class DockManagementUI:
         self.yellow_light_canvas = None
         self.green_light_canvas = None
         self.status_label = None
+        self.license_expiry_label = None
         self.info_text = None
         
         # Video capture
@@ -223,6 +224,16 @@ class DockManagementUI:
         )
         self.device_label.pack(pady=2)
         
+        # License expiry label
+        self.license_expiry_label = ttk.Label(
+            status_frame,
+            text="",
+            font=("Arial", 8),
+            foreground="red"
+        )
+        self.license_expiry_label.pack(pady=2)
+        self.update_license_expiry_display()
+        
         # ========== DETECTION INFO (BOTTOM RIGHT) ==========
         info_frame = ttk.LabelFrame(right_panel, text="Detection Info", padding="5")
         info_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 0))
@@ -285,6 +296,51 @@ class DockManagementUI:
     def update_signal(self, state):
         """Wrapper for backward compatibility"""
         self.update_signal_lights(state)
+    
+    def update_license_expiry_display(self):
+        """Update license expiry label with days remaining"""
+        try:
+            import json
+            import os
+            from datetime import datetime, timezone
+            
+            cache_file = config.LICENSE_CACHE_FILE
+            if os.path.exists(cache_file):
+                with open(cache_file, 'r') as f:
+                    cache_data = json.load(f)
+                
+                expiry_date = cache_data.get('expiry_date')
+                if expiry_date:
+                    try:
+                        expiry_dt = datetime.fromisoformat(expiry_date.replace('Z', '+00:00'))
+                        now = datetime.now(timezone.utc)
+                        days_left = (expiry_dt - now).days
+                        
+                        if days_left > 0:
+                            self.license_expiry_label.config(
+                                text=f"Free licence will be expired in {days_left} days",
+                                foreground="red"
+                            )
+                        elif days_left == 0:
+                            self.license_expiry_label.config(
+                                text="Free licence will be expired today",
+                                foreground="red"
+                            )
+                        else:
+                            self.license_expiry_label.config(
+                                text=f"Free licence expired {abs(days_left)} days ago",
+                                foreground="red"
+                            )
+                        return
+                    except Exception as e:
+                        print(f"Warning: Could not parse expiry date: {e}")
+            
+            # No expiry date or cache file not found
+            self.license_expiry_label.config(text="", foreground="red")
+            
+        except Exception as e:
+            print(f"Warning: Could not update license expiry display: {e}")
+            self.license_expiry_label.config(text="", foreground="red")
     
     def track_error(self, error_type, message=None):
         """

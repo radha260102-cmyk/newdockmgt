@@ -95,3 +95,9 @@ PLC_COIL_START_ADDRESS = 0  # Starting address for coils (adjust based on your P
 PLC_GREEN_LIGHT_COILS = [True, False, False, False, False, False, False, False]
 PLC_RED_LIGHT_COILS = [False, True, False, False, False, False, False, False]
 PLC_YELLOW_LIGHT_COILS = [False, False, True, False, False, False, False, False]
+# License Configuration
+# License key can be set here, via LICENSE_KEY environment variable, or loaded from cache
+# Set to None or empty string to load from cache only
+_license_key_env = os.getenv('LICENSE_KEY', "488668-B5FFC8-108E83-B72C63-201295-V3")
+LICENSE_KEY = _license_key_env if _license_key_env else None
+LICENSE_CACHE_FILE = "license_cache.json"  # File to store license data for offline use

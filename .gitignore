@@ -48,3 +48,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# License cache (contains license key and validation data)
+license_cache.json

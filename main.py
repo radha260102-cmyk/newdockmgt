@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'dock_utils'))
 from src.detector import YOLODetector
 from src.dock_manager import DockManager
 from src.ui import DockManagementUI
+from src.license_manager import LicenseManager
 import config
 
 
@@ -19,6 +20,23 @@ def main():
     print("=" * 50)
     print("Dock Management System")
     print("=" * 50)
+    
+    # License validation - MUST pass before continuing (always enabled)
+    try:
+        license_manager = LicenseManager(
+            license_key=config.LICENSE_KEY,
+            cache_file=config.LICENSE_CACHE_FILE
+        )
+        license_manager.check_license_and_exit_if_invalid()
+    except SystemExit:
+        # License check failed, application should exit
+        raise
+    except Exception as e:
+        print(f"\n❌ LICENSE VALIDATION ERROR: {str(e)}")
+        print("Application will now exit.")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     
     # Check if model exists
     if not os.path.exists(config.MODEL_PATH):
