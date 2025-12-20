@@ -36,6 +36,7 @@ class DockManagementUI:
         self.green_light_canvas = None
         self.status_label = None
         self.license_expiry_label = None
+        self.thread_fps_label = None
         self.info_text = None
         
         # Video capture
@@ -53,6 +54,12 @@ class DockManagementUI:
         self.fps_frame_count = 0
         self.current_fps = 0.0
         self.fps_update_interval = 1.0  # Update FPS every 1 second
+        
+        # Individual thread FPS tracking
+        self.frame_reading_fps = 0.0
+        self.detection_fps = 0.0
+        self.ui_update_fps = 0.0
+        self.fps_lock = threading.Lock()  # Thread-safe FPS updates
         
         # Multi-threading support
         self.enable_multithreading = config.ENABLE_MULTITHREADING
@@ -203,7 +210,7 @@ class DockManagementUI:
         )
         self.wait_time_label.pack(pady=5)
         
-        # FPS label
+        # FPS label (overall)
         self.fps_label = ttk.Label(
             status_frame,
             text="FPS: 0.0",
@@ -211,6 +218,17 @@ class DockManagementUI:
             foreground="blue"
         )
         self.fps_label.pack(pady=2)
+        
+        # Individual thread FPS labels (only show if multithreading enabled) - compact flex format
+        if self.enable_multithreading:
+            # Single label with all FPS in one line
+            self.thread_fps_label = ttk.Label(
+                status_frame,
+                text="Thread FPS: Read=0.0 | Detect=0.0 | UI=0.0",
+                font=("Arial", 8),
+                foreground="green"
+            )
+            self.thread_fps_label.pack(pady=1)
         
         # Device info label (GPU/CPU)
         import torch
@@ -630,6 +648,15 @@ class DockManagementUI:
         self.fps_label.config(text="FPS: 0.0")
         self.fps_frame_count = 0
         self.current_fps = 0.0
+        
+        # Reset individual thread FPS label
+        if self.enable_multithreading:
+            if self.thread_fps_label:
+                self.thread_fps_label.config(text="Thread FPS: Read=0.0 | Detect=0.0 | UI=0.0")
+            with self.fps_lock:
+                self.frame_reading_fps = 0.0
+                self.detection_fps = 0.0
+                self.ui_update_fps = 0.0
     
     def detection_loop(self):
         """Main detection loop running in separate thread"""
@@ -882,6 +909,10 @@ class DockManagementUI:
         last_fps_update = time.time()
         fps_frame_count = 0
         
+        # Individual thread FPS tracking
+        thread_fps_count = 0
+        thread_fps_start = time.time()
+        
         while self.is_running:
             if self.cap is None or not self.cap.isOpened():
                 self.track_error('video_read_error', 'Video capture is not opened or became invalid')
@@ -898,6 +929,7 @@ class DockManagementUI:
             
             frame_counter += 1
             fps_frame_count += 1  # Count ALL frames for FPS (including skipped ones)
+            thread_fps_count += 1  # Count for thread-specific FPS
             
             # Calculate FPS (count all frames read, not just processed ones)
             current_time = time.time()
@@ -908,6 +940,21 @@ class DockManagementUI:
                 last_fps_update = current_time
                 # Update FPS label in main thread
                 self.root.after(0, lambda: self.fps_label.config(text=f"FPS: {self.current_fps:.1f}"))
+            
+            # Calculate thread-specific FPS
+            thread_elapsed = current_time - thread_fps_start
+            if thread_elapsed >= self.fps_update_interval:
+                with self.fps_lock:
+                    self.frame_reading_fps = thread_fps_count / thread_elapsed
+                thread_fps_count = 0
+                thread_fps_start = current_time
+                # Update thread FPS label (combined)
+                with self.fps_lock:
+                    read_fps = self.frame_reading_fps
+                    detect_fps = self.detection_fps
+                    ui_fps = self.ui_update_fps
+                self.root.after(0, lambda r=read_fps, d=detect_fps, u=ui_fps: 
+                    self.thread_fps_label.config(text=f"Thread FPS: Read={r:.1f} | Detect={d:.1f} | UI={u:.1f}"))
             
             # Skip frames based on FRAME_SKIP setting
             if frame_skip > 1 and frame_counter % frame_skip != 0:
@@ -935,6 +982,10 @@ class DockManagementUI:
     def detection_processing_loop(self):
         """Thread 2: Process frames from queue, perform detection, put results in result queue"""
         # Note: FPS is calculated in frame_reading_loop to count all frames (including skipped ones)
+        
+        # Individual thread FPS tracking
+        detection_fps_count = 0
+        detection_fps_start = time.time()
         
         if self.enable_batch_processing and self.batch_size > 1:
             # Batch processing mode
@@ -981,6 +1032,23 @@ class DockManagementUI:
                         
                         # Draw detections on frame
                         annotated_frame = self.draw_detections(frame.copy(), detections)
+                        
+                        # Track detection FPS
+                        detection_fps_count += 1
+                        current_time = time.time()
+                        detection_elapsed = current_time - detection_fps_start
+                        if detection_elapsed >= self.fps_update_interval:
+                            with self.fps_lock:
+                                self.detection_fps = detection_fps_count / detection_elapsed
+                            detection_fps_count = 0
+                            detection_fps_start = current_time
+                            # Update thread FPS label (combined)
+                            with self.fps_lock:
+                                read_fps = self.frame_reading_fps
+                                detect_fps = self.detection_fps
+                                ui_fps = self.ui_update_fps
+                            self.root.after(0, lambda r=read_fps, d=detect_fps, u=ui_fps: 
+                                self.thread_fps_label.config(text=f"Thread FPS: Read={r:.1f} | Detect={d:.1f} | UI={u:.1f}"))
                         
                         # Put result in queue (FPS is calculated in frame_reading_loop)
                         result = {
@@ -1032,6 +1100,18 @@ class DockManagementUI:
                     # Draw detections on frame
                     annotated_frame = self.draw_detections(frame.copy(), detections)
                     
+                    # Track detection FPS
+                    detection_fps_count += 1
+                    current_time = time.time()
+                    detection_elapsed = current_time - detection_fps_start
+                    if detection_elapsed >= self.fps_update_interval:
+                        with self.fps_lock:
+                            self.detection_fps = detection_fps_count / detection_elapsed
+                        detection_fps_count = 0
+                        detection_fps_start = current_time
+                        self.root.after(0, lambda fps=self.detection_fps: 
+                            self.detection_fps_label.config(text=f"Detection FPS: {fps:.1f}"))
+                    
                     # Put result in queue (FPS is calculated in frame_reading_loop)
                     result = {
                         'frame': annotated_frame,
@@ -1066,6 +1146,10 @@ class DockManagementUI:
         min_update_interval = 0.033  # ~30 FPS max UI update rate
         pending_result = None  # Store result if throttled
         
+        # Individual thread FPS tracking
+        ui_fps_count = 0
+        ui_fps_start = time.time()
+        
         while self.is_running:
             try:
                 # Get result from queue (with timeout to allow checking is_running)
@@ -1092,6 +1176,22 @@ class DockManagementUI:
                 
                 # Update FPS label
                 self.root.after(0, lambda fps=result['fps']: self.fps_label.config(text=f"FPS: {fps:.1f}"))
+                
+                # Track UI update FPS
+                ui_fps_count += 1
+                ui_elapsed = current_time - ui_fps_start
+                if ui_elapsed >= self.fps_update_interval:
+                    with self.fps_lock:
+                        self.ui_update_fps = ui_fps_count / ui_elapsed
+                    ui_fps_count = 0
+                    ui_fps_start = current_time
+                    # Update thread FPS label (combined)
+                    with self.fps_lock:
+                        read_fps = self.frame_reading_fps
+                        detect_fps = self.detection_fps
+                        ui_fps = self.ui_update_fps
+                    self.root.after(0, lambda r=read_fps, d=detect_fps, u=ui_fps: 
+                        self.thread_fps_label.config(text=f"Thread FPS: Read={r:.1f} | Detect={d:.1f} | UI={u:.1f}"))
                 
                 last_update_time = current_time
                 
