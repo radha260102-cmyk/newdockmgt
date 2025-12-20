@@ -4,9 +4,12 @@ Main Entry Point for Dock Management System
 import sys
 import os
 
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'dock_utils'))
+# Add src and dock_utils directories to path (for development mode)
+if not getattr(sys, 'frozen', False):
+    # Running as script - add src and dock_utils directories to path
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'dock_utils'))
+# In frozen mode, config.py is bundled and will be imported normally
 
 # Import all required libraries at build time for PyInstaller to detect them
 # This ensures all dependencies are included in the executable
@@ -18,13 +21,16 @@ try:
     from PIL import Image, ImageTk
     import pandas as pd
     import requests
-    import pymodbus
-    from pymodbus.client import ModbusTcpClient
+    try:
+        from pyModbusTCP.client import ModbusClient  # Actual package name
+    except ImportError:
+        pass
     import tkinter as tk
     from tkinter import ttk, messagebox
     # Try to import yolov5 - this ensures PyInstaller includes it
     try:
         import yolov5
+        import logging.config  # Ensure logging.config is available for yolov5
     except ImportError:
         pass  # Will use torch.hub instead
     # Import ultralytics/yolov5 via torch.hub dependencies
@@ -41,6 +47,8 @@ from src.detector import YOLODetector
 from src.dock_manager import DockManager
 from src.ui import DockManagementUI
 from src.license_manager import LicenseManager
+
+# Import config (bundled in exe, or from project root in development)
 import config
 
 

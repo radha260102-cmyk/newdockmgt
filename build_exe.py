@@ -52,14 +52,43 @@ def main():
             capture_output=False
         )
         
+        # Copy models directory to dist directory (keep it external)
+        print("\nCopying models directory (external)...")
+        dist_dir = os.path.join('dist', 'DockManagementSystem')
+        
+        if os.path.exists(dist_dir):
+            # Copy models directory (keep it external)
+            models_src = 'models'
+            models_dest = os.path.join(dist_dir, 'models')
+            if os.path.exists(models_src):
+                try:
+                    if os.path.exists(models_dest):
+                        shutil.rmtree(models_dest)
+                    shutil.copytree(models_src, models_dest)
+                    print(f"  ✓ Copied {models_src}/ directory")
+                except Exception as e:
+                    print(f"  ⚠ Could not copy {models_src}/: {e}")
+            else:
+                print(f"  ⚠ {models_src}/ directory not found (models must be placed manually)")
+        
         print("\n" + "=" * 60)
         print("✓ Build completed successfully!")
         print("=" * 60)
         print(f"\nExecutable location: dist/DockManagementSystem/DockManagementSystem.exe")
+        print("\nExternal files (editable, in exe directory):")
+        print("  - models/ (directory with model files)")
+        print("\nBundled in exe:")
+        print("  - config.py (bundled, not external)")
+        print("  - zone_config.json (bundled, not external)")
+        print("  - settings.json (bundled, not external)")
+        print("  - All libraries (torch, ultralytics, opencv, etc.)")
+        print("\nAuto-created files (in exe directory):")
+        print("  - license_cache.json (created automatically)")
         print("\nNote:")
         print("  - The entire 'dist/DockManagementSystem' folder contains your application")
         print("  - Copy the entire folder to distribute your application")
-        print("  - Ensure models/, zone_config.json, and settings.json are included")
+        print("  - Only models/ folder is external and can be replaced without rebuilding")
+        print("  - All libraries are bundled in the exe (no separate installation needed)")
         print("\nTo run: dist/DockManagementSystem/DockManagementSystem.exe")
         
         return 0

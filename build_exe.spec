@@ -9,11 +9,14 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 block_cipher = None
 
 # Collect all data files and submodules
+# NOTE: Only models folder is kept EXTERNAL to the exe
+# Config files are bundled in the exe
 datas = [
-    ('zone_config.json', '.'),
-    ('settings.json', '.'),  # Include if exists, will be created if not
-    ('license_cache.json', '.'),  # Include if exists, will be created if not
-    ('models', 'models'),  # Include models directory
+    ('config.py', '.'),  # Bundle config.py
+    ('zone_config.json', '.'),  # Bundle zone_config.json if exists
+    ('settings.json', '.'),  # Bundle settings.json if exists
+    # Models directory is EXCLUDED - must be external (in exe directory)
+    # license_cache.json will be auto-created in exe directory (no need to bundle)
 ]
 
 # Hidden imports for modules that PyInstaller might miss
@@ -31,13 +34,8 @@ hiddenimports = [
     'PIL.ImageTk',
     'pandas',
     'requests',
-    'pymodbus',
-    'pymodbus.client',
-    'pymodbus.client.sync',
-    'pymodbus.constants',
-    'pymodbus.payload',
-    'pymodbus.transaction',
-    'pymodbus.client.tcp',
+    'pyModbusTCP',  # Note: The actual package name is pyModbusTCP (not pymodbus)
+    'pyModbusTCP.client',
     'tkinter',
     'tkinter.ttk',
     'tkinter.messagebox',
@@ -48,11 +46,34 @@ hiddenimports = [
     'time',
     'datetime',
     'collections',
+    'urllib',
+    'urllib.request',
+    'urllib.error',
+    'urllib.parse',
+    'warnings',
+    'traceback',
+    'sys',
+    'os',
+    'logging',
+    'logging.config',  # Required for YOLOv5/utils
+    'logging.handlers',
     'ultralytics',  # For YOLOv5 via torch.hub
     'ultralytics.yolo',  # YOLOv5 submodules
-    'yolov5',  # Alternative YOLOv5 package if installed
+    'ultralytics.models',  # YOLOv5 models
+    'ultralytics.utils',  # YOLOv5 utils
+    'ultralytics.nn',  # YOLOv5 neural network modules
+    'ultralytics.trackers',  # YOLOv5 tracking
+    'yolov5',  # YOLOv5 package (primary method)
     'yolov5.models',  # YOLOv5 models submodule
     'yolov5.utils',  # YOLOv5 utils submodule
+    'yolov5.models.common',  # YOLOv5 common models
+    'yolov5.utils.general',  # YOLOv5 general utils
+    'yolov5.utils.augmentations',  # YOLOv5 augmentations
+    'yolov5.utils.dataloaders',  # YOLOv5 dataloaders
+    'hubconf',  # torch.hub support files
+    'torch.hub',  # torch.hub module for loading YOLO
+    'torch.utils',  # torch utilities
+    'torch.jit',  # torch JIT compiler
 ]
 
 # Collect torch and torchvision data files
@@ -65,15 +86,18 @@ try:
 except:
     pass
 
-# Collect yolov5 data files and submodules
+# Collect yolov5 data files and submodules (CRITICAL - must be included)
 try:
     import yolov5
     yolov5_datas = collect_data_files('yolov5')
     datas += yolov5_datas
     yolov5_submodules = collect_submodules('yolov5')
     hiddenimports.extend(yolov5_submodules)
-except:
-    pass
+    print(f"✓ Collected yolov5 package: {len(yolov5_submodules)} submodules")
+except ImportError:
+    print("⚠ Warning: yolov5 package not found. Make sure it's installed: pip install yolov5")
+except Exception as e:
+    print(f"⚠ Warning: Could not collect yolov5 files: {e}")
 
 # Collect ultralytics data files (for torch.hub yolov5)
 try:
@@ -82,6 +106,20 @@ try:
     datas += ultralytics_datas
     ultralytics_submodules = collect_submodules('ultralytics')
     hiddenimports.extend(ultralytics_submodules)
+except:
+    pass
+
+# Collect torch.hub cache data if it exists (YOLOv5 models cache)
+try:
+    import torch
+    hub_cache = os.path.join(os.path.expanduser('~'), '.cache', 'torch', 'hub')
+    if os.path.exists(hub_cache):
+        # Collect ultralytics/yolov5 from hub cache if it exists
+        yolov5_hub_path = os.path.join(hub_cache, 'ultralytics_yolov5_master')
+        if os.path.exists(yolov5_hub_path):
+            # This helps if torch.hub has already downloaded YOLOv5
+            # Note: torch.hub will download at runtime if needed, but having this helps
+            pass
 except:
     pass
 
@@ -109,13 +147,22 @@ try:
     import PIL
     import pandas
     import requests
-    import pymodbus
+    try:
+        import pyModbusTCP  # The actual package name
+    except ImportError:
+        pass
     import tkinter
-    # Try to import yolov5 at build time
+    import logging  # Ensure logging is imported
+    import logging.config  # Ensure logging.config is imported
+    # Try to import yolov5 at build time (CRITICAL - ensures it's bundled)
     try:
         import yolov5
-    except:
-        pass
+        print(f"✓ yolov5 package found: {yolov5.__version__ if hasattr(yolov5, '__version__') else 'unknown version'}")
+    except ImportError:
+        print("⚠ WARNING: yolov5 package not found. Install it with: pip install yolov5")
+        print("  The executable may fail to load YOLO models without this package.")
+    except Exception as e:
+        print(f"⚠ Warning importing yolov5: {e}")
     # Try to import ultralytics at build time
     try:
         import ultralytics
@@ -125,6 +172,7 @@ except Exception as e:
     print(f"Warning during build-time imports: {e}")
 
 # Analyze the main script
+# Config files are bundled in the exe
 a = Analysis(
     ['main.py'],
     pathex=[],

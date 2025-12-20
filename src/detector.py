@@ -58,47 +58,51 @@ class YOLODetector:
             print(f"Using explicit device: {device}")
         
         try:
-            # Load YOLOv5 model using torch.hub
-            # This loads the custom model from local path
-            self.model = torch.hub.load('ultralytics/yolov5', 'custom', path=self.model_path, trust_repo=True)
-            self.model.conf = config.CONFIDENCE_THRESHOLD  # Set confidence threshold
-            
-            # YOLOv5 models from torch.hub automatically use GPU if available
-            # But we can explicitly set device for batch processing
-            if hasattr(self.model, 'device'):
-                # Some YOLOv5 versions support explicit device setting
-                try:
-                    if device == 'cuda' and torch.cuda.is_available():
-                        # Ensure model is on GPU
-                        if next(self.model.model.parameters()).device.type != 'cuda':
-                            self.model.model = self.model.model.cuda()
-                        print(f"Model on GPU: {device_name}")
-                    else:
-                        if next(self.model.model.parameters()).device.type == 'cuda':
-                            self.model.model = self.model.model.cpu()
-                        print(f"Model on CPU")
-                except:
-                    # If device setting fails, model will use default (usually auto-detects GPU)
-                    pass
-            
-            print(f"YOLOv5 model loaded successfully from {self.model_path}")
-        except Exception as e:
-            print(f"Error loading YOLOv5 model: {e}")
-            print("\nTrying alternative loading method...")
+            # Try loading with yolov5 package first (works better in frozen executables)
             try:
-                # Alternative: Try loading directly if yolov5 is installed as package
                 import yolov5
                 self.model = yolov5.load(self.model_path, device=device)
                 self.model.conf = config.CONFIDENCE_THRESHOLD
-                print(f"YOLOv5 model loaded successfully (alternative method) from {self.model_path} on {device.upper()}")
-            except ImportError:
-                print("\nYOLOv5 package not found. Installing...")
-                print("Please run: pip install yolov5")
-                raise
-            except Exception as e2:
-                print(f"Alternative loading also failed: {e2}")
-                print("Please ensure the model file exists at the specified path")
-                raise
+                print(f"YOLOv5 model loaded successfully using yolov5 package from {self.model_path} on {device.upper()}")
+            except (ImportError, Exception) as yolov5_error:
+                # Fallback to torch.hub method (may fail in frozen executables due to cache issues)
+                print(f"yolov5 package load failed, trying torch.hub: {yolov5_error}")
+                try:
+                    # Load YOLOv5 model using torch.hub
+                    # This loads the custom model from local path
+                    self.model = torch.hub.load('ultralytics/yolov5', 'custom', path=self.model_path, trust_repo=True)
+                    self.model.conf = config.CONFIDENCE_THRESHOLD  # Set confidence threshold
+                    
+                    # YOLOv5 models from torch.hub automatically use GPU if available
+                    # But we can explicitly set device for batch processing
+                    if hasattr(self.model, 'device'):
+                        # Some YOLOv5 versions support explicit device setting
+                        try:
+                            if device == 'cuda' and torch.cuda.is_available():
+                                # Ensure model is on GPU
+                                if next(self.model.model.parameters()).device.type != 'cuda':
+                                    self.model.model = self.model.model.cuda()
+                                print(f"Model on GPU: {device_name}")
+                            else:
+                                if next(self.model.model.parameters()).device.type == 'cuda':
+                                    self.model.model = self.model.model.cpu()
+                                print(f"Model on CPU")
+                        except:
+                            # If device setting fails, model will use default (usually auto-detects GPU)
+                            pass
+                    
+                    print(f"YOLOv5 model loaded successfully from {self.model_path}")
+                except Exception as hub_error:
+                    print(f"torch.hub load also failed: {hub_error}")
+                    raise
+        except Exception as e:
+            print(f"\nAll YOLOv5 loading methods failed.")
+            print(f"Error: {e}")
+            print("Please ensure:")
+            print("  1. The model file exists at the specified path")
+            print("  2. yolov5 package is installed (pip install yolov5)")
+            print("  3. Or ultralytics package is available for torch.hub")
+            raise
     
     def detect(self, frame):
         """

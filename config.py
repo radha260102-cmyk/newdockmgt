@@ -107,7 +107,7 @@ if ENABLE_BATCH_PROCESSING and BATCH_SIZE < 1:
 
 # Video Source
 #VIDEO_SOURCE = "rtsp://admin:india123@192.168.1.64:554/Streaming/Channels/101?transportmode=unicast&streamtype=main&transport=tcp"  # 0 for webcam, or path to video file
-VIDEO_SOURCE = "2_edited.mp4"  # 0 for webcam, or path to video file
+VIDEO_SOURCE = "3.mp4"  # 0 for webcam, or path to video file
 
 # API Configuration for Audio/Visual Alerts
 YELLOW_API_URL = "http://192.168.1.101/api/player?action=start&id=15&repeat=0&volume=2"  # API to call when YELLOW light glows

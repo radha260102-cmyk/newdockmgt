@@ -45,15 +45,27 @@ dist/DockManagementSystem/DockManagementSystem.exe
 ## Important Notes
 
 1. **Distribution**: Copy the entire `dist/DockManagementSystem` folder to distribute your application. The folder contains:
-   - `DockManagementSystem.exe` - The main executable
-   - `models/` - Model files directory (if included)
-   - Various DLL and dependency files
-   - `zone_config.json`, `settings.json` - Configuration files
+   - `DockManagementSystem.exe` - The main executable (with all libraries bundled)
+   - `models/` - Model files directory (EXTERNAL, editable/replaceable)
+   - Various DLL and dependency files (bundled)
+   - `config.py` - Configuration Python file (EXTERNAL, editable)
+   - `zone_config.json` - Zone configuration (EXTERNAL, editable)
+   - `settings.json` - Application settings (EXTERNAL, editable)
+   - `license_cache.json` - License cache (auto-created, managed by app)
 
-2. **Configuration Files**: 
-   - `zone_config.json` and `settings.json` will be included if they exist
-   - Users can edit these files to configure the application
-   - If they don't exist, the application will create them on first run
+2. **External Configuration Files and Models**: 
+   - **Configuration files and models are kept EXTERNAL to the executable**
+   - `config.py`, `zone_config.json`, `settings.json`, and `models/` directory are copied to the exe directory during build
+   - These files can be edited directly without rebuilding the executable
+   - The application reads config files and models from the same directory as the .exe file
+   - If config files don't exist, the application will create them on first run (for JSON files)
+   - **You can modify config.py, JSON files, or replace model files without rebuilding**
+   - `license_cache.json` is auto-created in the exe directory (internal, managed by the app)
+
+3. **All Libraries Bundled**: 
+   - All required Python libraries (torch, ultralytics, opencv, pyModbusTCP, etc.) are bundled in the exe
+   - No separate Python installation or library installation needed on the target machine
+   - The executable is self-contained except for external config files and models
 
 3. **Models**: The `models/` directory structure is included, but you may need to ensure your model files are present when distributing.
 
