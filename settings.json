@@ -1,5 +1,5 @@
 {
-    "video_source": "3.mp4",
+    "video_source": "c:\\Yash\\Cordova\\DockProjectTata\\3.mp4",
     "model_path": "c:\\Yash\\Cordova\\DockProjectTata\\HumanBackendLogicNew\\models/best_doc4.pt",
     "confidence_threshold": 0.5,
     "use_gpu": true,
@@ -9,6 +9,8 @@
     "red_api_url": "http://192.168.1.101/api/player?action=start&id=16&repeat=0&volume=2",
     "stop_api_url": "http://192.168.1.101/api/player?action=stop",
     "enable_api_calls": true,
+    "dock_status_api_url": "http://127.0.0.1:3041/dock1/status",
+    "enable_dock_status_api": true,
     "enable_plc": true,
     "plc_host": "127.0.0.1",
     "plc_port": 502,

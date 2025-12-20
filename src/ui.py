@@ -1455,6 +1455,26 @@ class DockManagementUI:
         ttk.Entry(api_frame, textvariable=settings_vars['stop_api_url'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
         row += 1
         
+        # Separator
+        ttk.Separator(api_frame, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
+        row += 1
+        
+        # Dock Status API Section
+        ttk.Label(api_frame, text="Dock Status API (JSON POST):", font=("Arial", 9, "bold")).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Enable Dock Status API
+        settings_vars['enable_dock_status_api'] = tk.BooleanVar(value=current_settings.get('enable_dock_status_api', True))
+        ttk.Checkbutton(api_frame, text="Enable Dock Status API", variable=settings_vars['enable_dock_status_api']).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Dock Status API URL
+        ttk.Label(api_frame, text="Dock Status API URL:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['dock_status_api_url'] = tk.StringVar(value=current_settings.get('dock_status_api_url', 'http://127.0.0.1:3041/dock1/status'))
+        ttk.Entry(api_frame, textvariable=settings_vars['dock_status_api_url'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
+        ttk.Label(api_frame, text="Sends JSON: {vehicle_status, human_presence, notes}", font=("Arial", 8), foreground="gray").grid(row=row+1, column=1, sticky=tk.W)
+        row += 2
+        
         api_frame.columnconfigure(1, weight=1)
         
         # ========== PLC SETTINGS TAB ==========
@@ -1615,6 +1635,8 @@ class DockManagementUI:
                 new_settings['red_api_url'] = settings_vars['red_api_url'].get()
                 new_settings['stop_api_url'] = settings_vars['stop_api_url'].get()
                 new_settings['enable_api_calls'] = settings_vars['enable_api_calls'].get()
+                new_settings['dock_status_api_url'] = settings_vars['dock_status_api_url'].get()
+                new_settings['enable_dock_status_api'] = settings_vars['enable_dock_status_api'].get()
                 new_settings['enable_plc'] = settings_vars['enable_plc'].get()
                 new_settings['plc_host'] = settings_vars['plc_host'].get()
                 new_settings['plc_port'] = int(settings_vars['plc_port'].get())

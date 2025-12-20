@@ -107,13 +107,17 @@ if ENABLE_BATCH_PROCESSING and BATCH_SIZE < 1:
 
 # Video Source
 #VIDEO_SOURCE = "rtsp://admin:india123@192.168.1.64:554/Streaming/Channels/101?transportmode=unicast&streamtype=main&transport=tcp"  # 0 for webcam, or path to video file
-VIDEO_SOURCE = "3.mp4"  # 0 for webcam, or path to video file
+VIDEO_SOURCE = "C:/Yash/Cordova/DockProjectTata/3.mp4"  # 0 for webcam, or path to video file
 
-# API Configuration for Audio/Visual Alerts
+# API Configuration for Audio/Visual Alerts (Speaker)
 YELLOW_API_URL = "http://192.168.1.101/api/player?action=start&id=15&repeat=0&volume=2"  # API to call when YELLOW light glows
 RED_API_URL = "http://192.168.1.101/api/player?action=start&id=16&repeat=0&volume=2"  # API to call when RED light glows
 STOP_API_URL = "http://192.168.1.101/api/player?action=stop"  # API to call when GREEN light glows (stop all alerts)
 ENABLE_API_CALLS = True  # Enable/disable API calls
+
+# Dock Status API Configuration
+DOCK_STATUS_API_URL = "http://127.0.0.1:3041/dock1/status"  # API endpoint for dock status updates
+ENABLE_DOCK_STATUS_API = True  # Enable/disable dock status API calls
 
 # PLC Configuration (Modbus TCP)
 ENABLE_PLC = True  # Enable/disable PLC control
@@ -141,6 +145,7 @@ def load_settings():
             # Update config values from settings file
             global VIDEO_SOURCE, MODEL_PATH, CONFIDENCE_THRESHOLD, USE_GPU, LICENSE_KEY
             global YELLOW_API_URL, RED_API_URL, STOP_API_URL, ENABLE_API_CALLS
+            global DOCK_STATUS_API_URL, ENABLE_DOCK_STATUS_API
             global ENABLE_PLC, PLC_HOST, PLC_PORT
             global PLC_GREEN_LIGHT_COILS, PLC_RED_LIGHT_COILS, PLC_YELLOW_LIGHT_COILS
             global PARKING_LINE_WAIT_TIME, PARKING_LINE_GRACE_PERIOD
@@ -170,6 +175,10 @@ def load_settings():
                 STOP_API_URL = settings['stop_api_url']
             if 'enable_api_calls' in settings:
                 ENABLE_API_CALLS = bool(settings['enable_api_calls'])
+            if 'dock_status_api_url' in settings:
+                DOCK_STATUS_API_URL = settings['dock_status_api_url']
+            if 'enable_dock_status_api' in settings:
+                ENABLE_DOCK_STATUS_API = bool(settings['enable_dock_status_api'])
             if 'enable_plc' in settings:
                 ENABLE_PLC = bool(settings['enable_plc'])
             if 'plc_host' in settings:
@@ -242,6 +251,8 @@ def get_current_settings():
         'red_api_url': RED_API_URL,
         'stop_api_url': STOP_API_URL,
         'enable_api_calls': ENABLE_API_CALLS,
+        'dock_status_api_url': DOCK_STATUS_API_URL,
+        'enable_dock_status_api': ENABLE_DOCK_STATUS_API,
         'enable_plc': ENABLE_PLC,
         'plc_host': PLC_HOST,
         'plc_port': PLC_PORT,
@@ -287,6 +298,10 @@ def update_settings_from_dict(settings_dict):
         STOP_API_URL = settings_dict['stop_api_url']
     if 'enable_api_calls' in settings_dict:
         ENABLE_API_CALLS = bool(settings_dict['enable_api_calls'])
+    if 'dock_status_api_url' in settings_dict:
+        DOCK_STATUS_API_URL = settings_dict['dock_status_api_url']
+    if 'enable_dock_status_api' in settings_dict:
+        ENABLE_DOCK_STATUS_API = bool(settings_dict['enable_dock_status_api'])
     if 'enable_plc' in settings_dict:
         ENABLE_PLC = bool(settings_dict['enable_plc'])
     if 'plc_host' in settings_dict:

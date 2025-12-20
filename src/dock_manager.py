@@ -8,6 +8,7 @@ import time
 import threading
 import urllib.request
 import urllib.error
+import json
 
 
 class DockManager:
@@ -30,6 +31,7 @@ class DockManager:
         self.wait_time_seconds = config.PARKING_LINE_WAIT_TIME
         self.not_touching_count = 0  # Count consecutive frames where truck is not touching (for grace period)
         self.grace_period_frames = config.PARKING_LINE_GRACE_PERIOD  # Number of consecutive "not touching" detections before resetting timer
+        self.last_detection_summary = None  # Store last detection summary for API notes
         
         # Initialize PLC manager if enabled
         if config.ENABLE_PLC:
@@ -101,6 +103,9 @@ class DockManager:
         human_present = detection_summary['human_present']
         trucks = detection_summary['trucks']
         current_time = time.time()
+        
+        # Store detection info for API calls
+        self.last_detection_summary = detection_summary
         
         # Rule 1: No truck = GREEN
         if not truck_present:
@@ -253,6 +258,45 @@ class DockManager:
         thread = threading.Thread(target=make_request, daemon=True)
         thread.start()
     
+    def _call_dock_status_api(self, vehicle_status, human_presence, notes):
+        """
+        Call dock status API endpoint with JSON payload in a separate thread (non-blocking)
+        Args:
+            vehicle_status: "placed" or "not_placed"
+            human_presence: "present" or "not_present"
+            notes: Descriptive notes string
+        """
+        def make_request():
+            try:
+                payload = {
+                    "vehicle_status": vehicle_status,
+                    "human_presence": human_presence,
+                    "notes": notes
+                }
+                data = json.dumps(payload).encode('utf-8')
+                
+                request = urllib.request.Request(
+                    config.DOCK_STATUS_API_URL,
+                    data=data,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST'
+                )
+                
+                with urllib.request.urlopen(request, timeout=3) as response:
+                    status_code = response.getcode()
+                    if status_code == 200:
+                        print(f"✓ Dock status API call successful: {vehicle_status}, {human_presence}")
+                    else:
+                        print(f"⚠ Dock status API returned status {status_code}")
+            except urllib.error.URLError as e:
+                print(f"✗ Dock status API call failed: {e}")
+            except Exception as e:
+                print(f"✗ Dock status API error: {e}")
+        
+        # Call API in background thread to avoid blocking
+        thread = threading.Thread(target=make_request, daemon=True)
+        thread.start()
+    
     def _handle_state_change(self, new_state):
         """
         Handle state changes and call appropriate APIs and update PLC
@@ -265,7 +309,34 @@ class DockManager:
         
         print(f"State changed: {self.previous_state} -> {new_state}")
         
-        # Call APIs if enabled
+        # Get detection info for generating notes
+        truck_present = False
+        human_present = False
+        truck_in_zone = False
+        truck_touching_line = False
+        
+        if self.last_detection_summary:
+            truck_present = self.last_detection_summary.get('truck_present', False)
+            human_present = self.last_detection_summary.get('human_present', False)
+            trucks = self.last_detection_summary.get('trucks', [])
+            
+            # Check truck position
+            for truck in trucks:
+                truck_bbox = truck['bbox']
+                if self.is_truck_in_zone(truck_bbox):
+                    truck_in_zone = True
+                    if self.is_truck_touching_parking_line(truck_bbox):
+                        truck_touching_line = True
+                        break
+        
+        # Generate notes based on state
+        notes = self._generate_notes(new_state, truck_present, human_present, truck_in_zone, truck_touching_line)
+        
+        # Determine vehicle_status and human_presence for dock status API
+        vehicle_status = "placed" if (truck_present and truck_in_zone) else "not_placed"
+        human_presence_str = "present" if human_present else "not_present"
+        
+        # Call speaker APIs if enabled (existing functionality)
         if config.ENABLE_API_CALLS:
             if new_state == "RED":
                 # Call RED API when red light glows
@@ -277,12 +348,68 @@ class DockManager:
                 # Call STOP API when green light glows
                 self._call_api(config.STOP_API_URL)
         
+        # Call dock status API if enabled (new functionality)
+        if config.ENABLE_DOCK_STATUS_API:
+            self._call_dock_status_api(vehicle_status, human_presence_str, notes)
+        
         # Update PLC coils (works independently of API calls, runs in separate thread)
         if self.plc_manager:
             self.plc_manager.update_state(new_state)
         
         # Update previous state
         self.previous_state = new_state
+    
+    def _generate_notes(self, state, truck_present, human_present, truck_in_zone, truck_touching_line):
+        """
+        Generate descriptive notes based on current state and detection results
+        Args:
+            state: Current state ('RED', 'YELLOW', 'GREEN')
+            truck_present: Whether truck is detected
+            human_present: Whether human is detected
+            truck_in_zone: Whether truck is in dock zone
+            truck_touching_line: Whether truck is touching parking line
+        Returns:
+            str: Descriptive notes
+        """
+        if state == "GREEN":
+            if not truck_present:
+                return "Dock cleared and ready for next vehicle"
+            elif truck_in_zone and truck_touching_line:
+                if human_present:
+                    return "Truck properly placed at parking line. Wait time completed. Human present in zone"
+                else:
+                    return "Truck properly placed at parking line. Wait time completed. Dock ready"
+            else:
+                return "Dock status: Green - Ready"
+        
+        elif state == "RED":
+            if truck_in_zone and not truck_touching_line and human_present:
+                return "Violation: Truck in zone but not at parking line. Human present in dock area"
+            elif truck_in_zone and truck_touching_line and human_present:
+                wait_remaining = self.get_parking_wait_remaining()
+                if wait_remaining:
+                    return f"Truck at parking line. Wait time in progress ({wait_remaining}s remaining). Human present - violation"
+                else:
+                    return "Truck at parking line. Human present in dock area"
+            else:
+                return "Dock status: Red - Violation detected"
+        
+        elif state == "YELLOW":
+            if truck_in_zone and not truck_touching_line:
+                if human_present:
+                    return "Warning: Truck in zone but not at parking line. Human present"
+                else:
+                    return "Warning: Truck in zone but not properly positioned at parking line"
+            elif truck_in_zone and truck_touching_line:
+                wait_remaining = self.get_parking_wait_remaining()
+                if wait_remaining:
+                    return f"Truck at parking line. Wait time in progress ({wait_remaining}s remaining). No human detected"
+                else:
+                    return "Truck at parking line. Positioning in progress"
+            else:
+                return "Dock status: Yellow - Warning"
+        
+        return f"Dock status: {state}"
     
     def cleanup(self):
         """Cleanup resources, stop PLC manager"""
