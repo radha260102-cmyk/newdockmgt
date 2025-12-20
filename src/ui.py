@@ -9,6 +9,7 @@ from PIL import Image, ImageTk
 import threading
 import queue
 import time
+import json
 import config
 
 
@@ -234,6 +235,14 @@ class DockManagementUI:
         self.license_expiry_label.pack(pady=2)
         self.update_license_expiry_display()
         
+        # Settings button
+        settings_button = ttk.Button(
+            status_frame,
+            text="⚙ Settings",
+            command=self.open_settings
+        )
+        settings_button.pack(pady=10)
+        
         # ========== DETECTION INFO (BOTTOM RIGHT) ==========
         info_frame = ttk.LabelFrame(right_panel, text="Detection Info", padding="5")
         info_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 0))
@@ -299,6 +308,11 @@ class DockManagementUI:
     
     def update_license_expiry_display(self):
         """Update license expiry label with days remaining"""
+        # Check if license expiry display is enabled in settings
+        if not config.SHOW_LICENSE_EXPIRY:
+            self.license_expiry_label.config(text="")
+            return
+        
         try:
             import json
             import os
@@ -345,13 +359,17 @@ class DockManagementUI:
     def track_error(self, error_type, message=None):
         """
         Track errors in a thread-safe manner
+        Auto-resets counters when they reach 1000 to prevent unbounded growth in 24/7 operation
         Args:
             error_type: 'frame_queue_full', 'result_queue_full', 'dropped_frame', 
                        'detection_error', 'video_read_error', 'general_error'
             message: Optional error message
         """
         import time
+        MAX_COUNTER_VALUE = 1000  # Reset counters when they reach this value
+        
         with self.error_lock:
+            # Increment appropriate counter
             if error_type == 'frame_queue_full':
                 self.error_stats['frame_queue_full_count'] += 1
             elif error_type == 'result_queue_full':
@@ -366,6 +384,21 @@ class DockManagementUI:
                         self.error_stats['detection_errors'].pop(0)
             elif error_type == 'video_read_error':
                 self.error_stats['video_read_errors'] += 1
+            
+            # Check if any counter reached max value and reset all counters
+            if (self.error_stats['frame_queue_full_count'] >= MAX_COUNTER_VALUE or
+                self.error_stats['result_queue_full_count'] >= MAX_COUNTER_VALUE or
+                self.error_stats['dropped_frames_count'] >= MAX_COUNTER_VALUE or
+                self.error_stats['video_read_errors'] >= MAX_COUNTER_VALUE):
+                # Reset all counters to prevent unbounded growth
+                print(f"Info: Error counters reached {MAX_COUNTER_VALUE}, resetting counters for 24/7 operation")
+                self.error_stats['frame_queue_full_count'] = 0
+                self.error_stats['result_queue_full_count'] = 0
+                self.error_stats['dropped_frames_count'] = 0
+                self.error_stats['video_read_errors'] = 0
+                # Keep detection_errors list but clear if too large
+                if len(self.error_stats['detection_errors']) > 10:
+                    self.error_stats['detection_errors'] = self.error_stats['detection_errors'][-10:]
             
             # Update last error
             if message:
@@ -524,6 +557,10 @@ class DockManagementUI:
                 messagebox.showerror("Error", "Could not open video source")
                 return
             
+            # Zones and parking lines are already configured on cropped frames
+            # So they're already in the cropped coordinate system - no adjustment needed
+            # The zones loaded from config are already relative to the cropped frame size
+            
             self.is_running = True
             # Buttons removed, so no need to update button states
             
@@ -616,7 +653,7 @@ class DockManagementUI:
                     # Process remaining frames in batch before breaking
                     self.track_error('video_read_error', 'Failed to read frame from video source')
                     if len(batch_frames) > 0:
-                        # Sync zone coordinates
+                        # Sync zone coordinates (zones are already in cropped coordinate system)
                         if self.dock_manager.zone_coordinates:
                             self.detector.update_zone(self.dock_manager.zone_coordinates)
                         
@@ -646,6 +683,9 @@ class DockManagementUI:
                                 last_fps_update = current_time
                                 self.root.after(0, lambda: self.fps_label.config(text=f"FPS: {self.current_fps:.1f}"))
                     break
+                
+                # Crop frame to reduce size immediately after reading
+                frame = self._crop_frame(frame)
                 
                 frame_counter += 1
                 self.fps_frame_count += 1  # Count ALL frames for FPS (including skipped ones)
@@ -680,7 +720,7 @@ class DockManagementUI:
                 
                 # Process batch when full
                 if len(batch_frames) >= self.batch_size:
-                    # Sync zone coordinates
+                    # Sync zone coordinates (already adjusted for crop in start_detection)
                     if self.dock_manager.zone_coordinates:
                         self.detector.update_zone(self.dock_manager.zone_coordinates)
                     
@@ -723,6 +763,9 @@ class DockManagementUI:
                     self.track_error('video_read_error', 'Failed to read frame from video source')
                     break
                 
+                # Crop frame to reduce size
+                frame = self._crop_frame(frame)
+                
                 frame_counter += 1
                 self.fps_frame_count += 1  # Count ALL frames for FPS (including skipped ones)
                 
@@ -756,7 +799,7 @@ class DockManagementUI:
                     time.sleep(0.001)
                     continue
                 
-                # Sync zone coordinates with detector (in case zone was updated)
+                # Sync zone coordinates with detector (zones are already in cropped coordinate system)
                 if self.dock_manager.zone_coordinates:
                     self.detector.update_zone(self.dock_manager.zone_coordinates)
                 
@@ -782,6 +825,54 @@ class DockManagementUI:
                 # Removed 0.03s sleep to prevent lag with RTSP streams
                 time.sleep(0.001)
     
+    def _crop_frame(self, frame):
+        """
+        Crop frame to specified region to reduce frame size
+        Crop region defined by coordinates: (1987,0), (659,0), (659,1626), (1987,1626)
+        This crops to: x from 659 to 1987, y from 0 to 1626
+        The cropped frame becomes the final frame used throughout the system.
+        Optimized for performance - minimal bounds checking, uses numpy view (no copy).
+        """
+        if frame is None:
+            return frame
+        
+        # Crop coordinates: x1=659, y1=0, x2=1987, y2=1626
+        # Direct slicing - numpy creates a view (very fast, no memory copy)
+        # Minimal bounds check for safety
+        h, w = frame.shape[:2]
+        return frame[0:min(1626, h), 659:min(1987, w)]  # Clip to frame bounds
+    
+    def _adjust_coordinates_for_crop(self, coordinates):
+        """
+        Adjust coordinates to account for frame cropping
+        Crop offset: x_offset=659, y_offset=0
+        Args:
+            coordinates: List of (x, y) tuples or list of [x, y] lists
+        Returns:
+            Adjusted coordinates
+        """
+        if coordinates is None:
+            return None
+        
+        # Crop offset
+        x_offset, y_offset = 659, 0
+        
+        adjusted = []
+        for coord in coordinates:
+            if isinstance(coord, (list, tuple)) and len(coord) >= 2:
+                # Adjust x and y coordinates
+                adj_x = coord[0] - x_offset
+                adj_y = coord[1] - y_offset
+                # Keep original format (tuple or list)
+                if isinstance(coord, tuple):
+                    adjusted.append((adj_x, adj_y))
+                else:
+                    adjusted.append([adj_x, adj_y])
+            else:
+                adjusted.append(coord)
+        
+        return adjusted
+    
     def frame_reading_loop(self):
         """Thread 1: Continuously read frames from video source and put in queue"""
         frame_skip = config.FRAME_SKIP if config.FRAME_SKIP > 0 else 1
@@ -801,6 +892,9 @@ class DockManagementUI:
                 # Video ended or error reading frame
                 self.track_error('video_read_error', 'Failed to read frame from video source')
                 break
+            
+            # Crop frame to reduce size
+            frame = self._crop_frame(frame)
             
             frame_counter += 1
             fps_frame_count += 1  # Count ALL frames for FPS (including skipped ones)
@@ -835,8 +929,8 @@ class DockManagementUI:
                 # Queue might not be initialized yet
                 break
             
-            # Small delay to prevent overwhelming
-            time.sleep(0.001)  # 1ms delay
+            # No sleep needed - queue and processing threads handle rate limiting naturally
+            # Removing sleep improves frame reading speed, especially with smaller cropped frames
     
     def detection_processing_loop(self):
         """Thread 2: Process frames from queue, perform detection, put results in result queue"""
@@ -867,7 +961,7 @@ class DockManagementUI:
                     if len(batch_frames) == 0:
                         continue
                     
-                    # Sync zone coordinates with detector
+                    # Sync zone coordinates with detector (zones are already in cropped coordinate system)
                     if self.dock_manager.zone_coordinates:
                         self.detector.update_zone(self.dock_manager.zone_coordinates)
                     
@@ -1057,7 +1151,7 @@ class DockManagementUI:
         """Draw detection boxes on frame"""
         import numpy as np
         
-        # Draw zone polygon if configured
+        # Draw zone polygon if configured (already adjusted for crop in start_detection)
         if self.dock_manager.zone_coordinates and len(self.dock_manager.zone_coordinates) >= 3:
             zone_pts = np.array(self.dock_manager.zone_coordinates, np.int32)
             zone_pts = zone_pts.reshape((-1, 1, 2))
@@ -1067,7 +1161,7 @@ class DockManagementUI:
             cv2.addWeighted(overlay, 0.2, frame, 0.8, 0, frame)
             cv2.polylines(frame, [zone_pts], True, (0, 255, 0), 2)
         
-        # Draw parking line if configured
+        # Draw parking line if configured (already adjusted for crop in start_detection)
         if self.dock_manager.parking_line_points and len(self.dock_manager.parking_line_points) >= 2:
             line_pts = np.array(self.dock_manager.parking_line_points, np.int32)
             cv2.polylines(frame, [line_pts], False, (0, 255, 255), 3)
@@ -1119,6 +1213,347 @@ class DockManagementUI:
         # Update info
         self.update_info(detection_summary, state)
     
+    
+    def open_settings(self):
+        """Open settings dialog with password protection"""
+        # Password protection
+        SETTINGS_PASSWORD = "123456780"
+        
+        # Create password dialog
+        password_window = tk.Toplevel(self.root)
+        password_window.title("Enter Password")
+        password_window.geometry("350x150")
+        password_window.transient(self.root)
+        password_window.grab_set()
+        password_window.resizable(False, False)
+        
+        # Center the window
+        password_window.update_idletasks()
+        x = (password_window.winfo_screenwidth() // 2) - (password_window.winfo_width() // 2)
+        y = (password_window.winfo_screenheight() // 2) - (password_window.winfo_height() // 2)
+        password_window.geometry(f"+{x}+{y}")
+        
+        # Password label and entry
+        ttk.Label(password_window, text="Enter Password to Access Settings:", font=("Arial", 10)).pack(pady=20)
+        password_var = tk.StringVar()
+        password_entry = ttk.Entry(password_window, textvariable=password_var, show="*", width=30, font=("Arial", 10))
+        password_entry.pack(pady=10)
+        password_entry.focus()
+        
+        error_label = ttk.Label(password_window, text="", foreground="red", font=("Arial", 9))
+        error_label.pack(pady=5)
+        
+        def check_password():
+            """Check if password is correct"""
+            entered_password = password_var.get()
+            if entered_password == SETTINGS_PASSWORD:
+                password_window.destroy()
+                self._open_settings_dialog()
+            else:
+                error_label.config(text="Incorrect password. Please try again.")
+                password_var.set("")
+                password_entry.focus()
+        
+        def on_enter(event):
+            """Handle Enter key press"""
+            check_password()
+        
+        password_entry.bind("<Return>", on_enter)
+        
+        # Buttons
+        button_frame = ttk.Frame(password_window)
+        button_frame.pack(pady=10)
+        
+        ttk.Button(button_frame, text="OK", command=check_password, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=password_window.destroy, width=15).pack(side=tk.LEFT, padx=5)
+    
+    def _open_settings_dialog(self):
+        """Open settings dialog (internal method called after password verification)"""
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("Settings")
+        settings_window.geometry("700x800")
+        settings_window.transient(self.root)
+        settings_window.grab_set()
+        
+        # Create notebook for tabs
+        notebook = ttk.Notebook(settings_window)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Get current settings
+        current_settings = config.get_current_settings()
+        
+        # Variables to hold settings values
+        settings_vars = {}
+        
+        # ========== VIDEO & MODEL TAB ==========
+        video_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(video_frame, text="Video & Model")
+        
+        row = 0
+        # Video Source
+        ttk.Label(video_frame, text="Video Source (Camera IP/RTSP/File Path):").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['video_source'] = tk.StringVar(value=current_settings.get('video_source', ''))
+        ttk.Entry(video_frame, textvariable=settings_vars['video_source'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
+        ttk.Label(video_frame, text="Example: rtsp://user:pass@ip:port/path or 0 for webcam", font=("Arial", 8), foreground="gray").grid(row=row+1, column=1, sticky=tk.W)
+        row += 2
+        
+        # Model Path
+        ttk.Label(video_frame, text="Model Path:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['model_path'] = tk.StringVar(value=current_settings.get('model_path', ''))
+        ttk.Entry(video_frame, textvariable=settings_vars['model_path'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
+        row += 1
+        
+        # Confidence Threshold
+        ttk.Label(video_frame, text="Confidence Threshold:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['confidence_threshold'] = tk.StringVar(value=str(current_settings.get('confidence_threshold', 0.5)))
+        ttk.Entry(video_frame, textvariable=settings_vars['confidence_threshold'], width=20).grid(row=row, column=1, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Use GPU
+        settings_vars['use_gpu'] = tk.BooleanVar(value=current_settings.get('use_gpu', True))
+        ttk.Checkbutton(video_frame, text="Use GPU (CUDA)", variable=settings_vars['use_gpu']).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        # License Key
+        ttk.Label(video_frame, text="License Key:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['license_key'] = tk.StringVar(value=current_settings.get('license_key', ''))
+        ttk.Entry(video_frame, textvariable=settings_vars['license_key'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
+        row += 1
+        
+        # Show License Expiry
+        settings_vars['show_license_expiry'] = tk.BooleanVar(value=current_settings.get('show_license_expiry', True))
+        ttk.Checkbutton(video_frame, text="Show License Expiry Warning", variable=settings_vars['show_license_expiry']).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        video_frame.columnconfigure(1, weight=1)
+        
+        # ========== API SETTINGS TAB ==========
+        api_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(api_frame, text="API Settings")
+        
+        row = 0
+        # Enable API Calls
+        settings_vars['enable_api_calls'] = tk.BooleanVar(value=current_settings.get('enable_api_calls', True))
+        ttk.Checkbutton(api_frame, text="Enable API Calls", variable=settings_vars['enable_api_calls']).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Yellow API URL
+        ttk.Label(api_frame, text="Yellow API URL:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['yellow_api_url'] = tk.StringVar(value=current_settings.get('yellow_api_url', ''))
+        ttk.Entry(api_frame, textvariable=settings_vars['yellow_api_url'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
+        row += 1
+        
+        # Red API URL
+        ttk.Label(api_frame, text="Red API URL:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['red_api_url'] = tk.StringVar(value=current_settings.get('red_api_url', ''))
+        ttk.Entry(api_frame, textvariable=settings_vars['red_api_url'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
+        row += 1
+        
+        # Stop API URL
+        ttk.Label(api_frame, text="Stop API URL (Green):").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['stop_api_url'] = tk.StringVar(value=current_settings.get('stop_api_url', ''))
+        ttk.Entry(api_frame, textvariable=settings_vars['stop_api_url'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
+        row += 1
+        
+        api_frame.columnconfigure(1, weight=1)
+        
+        # ========== PLC SETTINGS TAB ==========
+        plc_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(plc_frame, text="PLC Settings")
+        
+        row = 0
+        # Enable PLC
+        settings_vars['enable_plc'] = tk.BooleanVar(value=current_settings.get('enable_plc', True))
+        ttk.Checkbutton(plc_frame, text="Enable PLC", variable=settings_vars['enable_plc']).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        # PLC Host
+        ttk.Label(plc_frame, text="PLC Host:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['plc_host'] = tk.StringVar(value=current_settings.get('plc_host', ''))
+        ttk.Entry(plc_frame, textvariable=settings_vars['plc_host'], width=30).grid(row=row, column=1, sticky=tk.W, pady=5)
+        row += 1
+        
+        # PLC Port
+        ttk.Label(plc_frame, text="PLC Port:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['plc_port'] = tk.StringVar(value=str(current_settings.get('plc_port', 502)))
+        ttk.Entry(plc_frame, textvariable=settings_vars['plc_port'], width=20).grid(row=row, column=1, sticky=tk.W, pady=5)
+        row += 1
+        
+        # PLC Coil Configurations
+        ttk.Label(plc_frame, text="PLC Coil Configurations (8 coils - True/False):", font=("Arial", 9, "bold")).grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=(15, 5))
+        row += 1
+        
+        # Green Light Coils
+        ttk.Label(plc_frame, text="Green Light Coils:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        green_coils_frame = ttk.Frame(plc_frame)
+        green_coils_frame.grid(row=row, column=1, sticky=tk.W, pady=5)
+        settings_vars['plc_green_coils'] = []
+        green_coils = current_settings.get('plc_green_coils', [True, False, False, False, False, False, False, False])
+        for i in range(8):
+            var = tk.BooleanVar(value=green_coils[i] if i < len(green_coils) else False)
+            settings_vars['plc_green_coils'].append(var)
+            ttk.Checkbutton(green_coils_frame, text=f"C{i}", variable=var).grid(row=0, column=i, padx=2)
+        row += 1
+        
+        # Red Light Coils
+        ttk.Label(plc_frame, text="Red Light Coils:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        red_coils_frame = ttk.Frame(plc_frame)
+        red_coils_frame.grid(row=row, column=1, sticky=tk.W, pady=5)
+        settings_vars['plc_red_coils'] = []
+        red_coils = current_settings.get('plc_red_coils', [False, True, False, False, False, False, False, False])
+        for i in range(8):
+            var = tk.BooleanVar(value=red_coils[i] if i < len(red_coils) else False)
+            settings_vars['plc_red_coils'].append(var)
+            ttk.Checkbutton(red_coils_frame, text=f"C{i}", variable=var).grid(row=0, column=i, padx=2)
+        row += 1
+        
+        # Yellow Light Coils
+        ttk.Label(plc_frame, text="Yellow Light Coils:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        yellow_coils_frame = ttk.Frame(plc_frame)
+        yellow_coils_frame.grid(row=row, column=1, sticky=tk.W, pady=5)
+        settings_vars['plc_yellow_coils'] = []
+        yellow_coils = current_settings.get('plc_yellow_coils', [False, False, True, False, False, False, False, False])
+        for i in range(8):
+            var = tk.BooleanVar(value=yellow_coils[i] if i < len(yellow_coils) else False)
+            settings_vars['plc_yellow_coils'].append(var)
+            ttk.Checkbutton(yellow_coils_frame, text=f"C{i}", variable=var).grid(row=0, column=i, padx=2)
+        row += 1
+        
+        # ========== TIMING SETTINGS TAB ==========
+        timing_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(timing_frame, text="Timing Settings")
+        
+        row = 0
+        # Parking Line Wait Time
+        ttk.Label(timing_frame, text="Parking Line Wait Time (seconds):").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['parking_line_wait_time'] = tk.StringVar(value=str(current_settings.get('parking_line_wait_time', 10)))
+        ttk.Entry(timing_frame, textvariable=settings_vars['parking_line_wait_time'], width=20).grid(row=row, column=1, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Parking Line Grace Period
+        ttk.Label(timing_frame, text="Parking Line Grace Period (frames):").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['parking_line_grace_period'] = tk.StringVar(value=str(current_settings.get('parking_line_grace_period', 50)))
+        ttk.Entry(timing_frame, textvariable=settings_vars['parking_line_grace_period'], width=20).grid(row=row, column=1, sticky=tk.W, pady=5)
+        row += 1
+        
+        # ========== PERFORMANCE SETTINGS TAB ==========
+        perf_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(perf_frame, text="Performance")
+        
+        row = 0
+        # Enable Multithreading
+        settings_vars['enable_multithreading'] = tk.BooleanVar(value=current_settings.get('enable_multithreading', True))
+        ttk.Checkbutton(perf_frame, text="Enable Multithreading", variable=settings_vars['enable_multithreading']).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Enable Batch Processing
+        settings_vars['enable_batch_processing'] = tk.BooleanVar(value=current_settings.get('enable_batch_processing', True))
+        ttk.Checkbutton(perf_frame, text="Enable Batch Processing", variable=settings_vars['enable_batch_processing']).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Batch Size
+        ttk.Label(perf_frame, text="Batch Size:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['batch_size'] = tk.StringVar(value=str(current_settings.get('batch_size', 2)))
+        ttk.Entry(perf_frame, textvariable=settings_vars['batch_size'], width=20).grid(row=row, column=1, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Batch Timeout
+        ttk.Label(perf_frame, text="Batch Timeout (seconds):").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['batch_timeout'] = tk.StringVar(value=str(current_settings.get('batch_timeout', 0.005)))
+        ttk.Entry(perf_frame, textvariable=settings_vars['batch_timeout'], width=20).grid(row=row, column=1, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Frame Skip
+        ttk.Label(perf_frame, text="Frame Skip (0 = process all):").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['frame_skip'] = tk.StringVar(value=str(current_settings.get('frame_skip', 0)))
+        ttk.Entry(perf_frame, textvariable=settings_vars['frame_skip'], width=20).grid(row=row, column=1, sticky=tk.W, pady=5)
+        row += 1
+        
+        # ========== ZONE CONFIGURATION TAB ==========
+        zone_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(zone_frame, text="Zone Configuration")
+        
+        # Zone Coordinates
+        ttk.Label(zone_frame, text="Zone Coordinates (JSON format):", font=("Arial", 9, "bold")).grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(zone_frame, text="Format: [[x1,y1], [x2,y2], [x3,y3], ...]", font=("Arial", 8), foreground="gray").grid(row=1, column=0, sticky=tk.W, pady=2)
+        
+        zone_coords_text = tk.Text(zone_frame, width=60, height=8, font=("Courier", 9))
+        zone_coords_text.grid(row=2, column=0, pady=5, sticky=(tk.W, tk.E))
+        zone_coords_value = current_settings.get('zone_coordinates', [])
+        zone_coords_text.insert("1.0", json.dumps(zone_coords_value, indent=2))
+        settings_vars['zone_coordinates'] = zone_coords_text
+        zone_frame.columnconfigure(0, weight=1)
+        
+        # Parking Line Points
+        ttk.Label(zone_frame, text="Parking Line Points (JSON format):", font=("Arial", 9, "bold")).grid(row=3, column=0, sticky=tk.W, pady=(15, 5))
+        ttk.Label(zone_frame, text="Format: [[x1,y1], [x2,y2]]", font=("Arial", 8), foreground="gray").grid(row=4, column=0, sticky=tk.W, pady=2)
+        
+        parking_line_text = tk.Text(zone_frame, width=60, height=4, font=("Courier", 9))
+        parking_line_text.grid(row=5, column=0, pady=5, sticky=(tk.W, tk.E))
+        parking_line_value = current_settings.get('parking_line_points', [])
+        parking_line_text.insert("1.0", json.dumps(parking_line_value, indent=2))
+        settings_vars['parking_line_points'] = parking_line_text
+        
+        ttk.Label(zone_frame, text="Note: Use 'python configure_zones.py' for visual configuration", 
+                 font=("Arial", 8), foreground="blue").grid(row=6, column=0, sticky=tk.W, pady=5)
+        
+        # Buttons
+        button_frame = ttk.Frame(settings_window)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        def save_settings():
+            """Save settings from dialog"""
+            try:
+                new_settings = {}
+                new_settings['video_source'] = settings_vars['video_source'].get()
+                new_settings['model_path'] = settings_vars['model_path'].get()
+                new_settings['confidence_threshold'] = float(settings_vars['confidence_threshold'].get())
+                new_settings['use_gpu'] = settings_vars['use_gpu'].get()
+                new_settings['license_key'] = settings_vars['license_key'].get()
+                new_settings['show_license_expiry'] = settings_vars['show_license_expiry'].get()
+                new_settings['yellow_api_url'] = settings_vars['yellow_api_url'].get()
+                new_settings['red_api_url'] = settings_vars['red_api_url'].get()
+                new_settings['stop_api_url'] = settings_vars['stop_api_url'].get()
+                new_settings['enable_api_calls'] = settings_vars['enable_api_calls'].get()
+                new_settings['enable_plc'] = settings_vars['enable_plc'].get()
+                new_settings['plc_host'] = settings_vars['plc_host'].get()
+                new_settings['plc_port'] = int(settings_vars['plc_port'].get())
+                # PLC Coils
+                new_settings['plc_green_coils'] = [var.get() for var in settings_vars['plc_green_coils']]
+                new_settings['plc_red_coils'] = [var.get() for var in settings_vars['plc_red_coils']]
+                new_settings['plc_yellow_coils'] = [var.get() for var in settings_vars['plc_yellow_coils']]
+                new_settings['parking_line_wait_time'] = int(settings_vars['parking_line_wait_time'].get())
+                new_settings['parking_line_grace_period'] = int(settings_vars['parking_line_grace_period'].get())
+                new_settings['batch_size'] = int(settings_vars['batch_size'].get())
+                new_settings['batch_timeout'] = float(settings_vars['batch_timeout'].get())
+                new_settings['enable_batch_processing'] = settings_vars['enable_batch_processing'].get()
+                new_settings['enable_multithreading'] = settings_vars['enable_multithreading'].get()
+                new_settings['frame_skip'] = int(settings_vars['frame_skip'].get())
+                # Zone Configuration (parse JSON from text widgets)
+                zone_coords_text = settings_vars['zone_coordinates'].get("1.0", tk.END).strip()
+                parking_line_text = settings_vars['parking_line_points'].get("1.0", tk.END).strip()
+                if zone_coords_text:
+                    new_settings['zone_coordinates'] = json.loads(zone_coords_text)
+                if parking_line_text:
+                    new_settings['parking_line_points'] = json.loads(parking_line_text)
+                
+                # Save to file
+                if config.save_settings_to_file(new_settings):
+                    # Update config module
+                    config.update_settings_from_dict(new_settings)
+                    # Update license expiry display immediately if setting changed
+                    self.update_license_expiry_display()
+                    messagebox.showinfo("Settings", "Settings saved successfully!\nPlease restart the application for changes to take effect.")
+                    settings_window.destroy()
+                else:
+                    messagebox.showerror("Error", "Failed to save settings.")
+            except ValueError as e:
+                messagebox.showerror("Error", f"Invalid value: {e}\nPlease check all fields are correct.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Error saving settings: {e}")
+        
+        ttk.Button(button_frame, text="Save", command=save_settings).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=settings_window.destroy).pack(side=tk.RIGHT, padx=5)
     
     def on_closing(self):
         """Handle window closing"""

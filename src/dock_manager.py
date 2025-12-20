@@ -84,11 +84,13 @@ class DockManager:
     def determine_state(self, detection_summary):
         """
         Determine dock state based on detection results
-        Rules:
-        1. Truck in zone + NOT touching parking line + Human present = VIOLATION (RED)
-        2. Truck in zone + NOT touching parking line + No human = YELLOW
-        3. Truck in zone + Touching parking line + Wait time elapsed = GREEN
-        4. No truck + (Human or No human) = GREEN
+        Rules (priority order):
+        1. No truck = GREEN
+        2. Truck in zone + Touching parking line + Counter completed = GREEN (regardless of human)
+        3. Truck in zone + Touching parking line + Counter running + Human present = RED
+        4. Truck in zone + Touching parking line + Counter running + No human = YELLOW
+        5. Truck in zone + NOT touching parking line + Human present = RED (violation)
+        6. Truck in zone + NOT touching parking line + No human = YELLOW
         
         Args:
             detection_summary: Dictionary with detection results
@@ -100,7 +102,7 @@ class DockManager:
         trucks = detection_summary['trucks']
         current_time = time.time()
         
-        # Rule 4: No truck = GREEN
+        # Rule 1: No truck = GREEN
         if not truck_present:
             self.parking_line_touch_start_time = None  # Reset timer
             self.current_state = "GREEN"
@@ -119,32 +121,50 @@ class DockManager:
                     truck_touching_line = True
                     break  # If one truck touches, we're good
         
-        # Rule 3: Truck in zone + Touching parking line
+        # Rule 2, 3 & 4: Truck in zone + Touching parking line
+        # Counter starts/continues even if human is present (RED state can continue with counter)
+        # Scenario: If already RED (human present, truck not touching line), and truck touches line:
+        #   - Counter starts immediately
+        #   - Light stays RED during countdown (because human is present)
+        #   - When counter completes, switches to GREEN (regardless of human)
         if truck_in_zone and truck_touching_line:
             # Reset not touching counter since truck is touching
             self.not_touching_count = 0
             
-            # Start or continue timer
+            # Start or continue timer (counter always starts when truck touches line)
+            # This works even if we transitioned from RED state (human present, not touching)
             if self.parking_line_touch_start_time is None:
                 self.parking_line_touch_start_time = current_time
-                # Show YELLOW while waiting
-                self.current_state = "YELLOW"
-                self._handle_state_change("YELLOW")
-                return self.current_state
             
             # Check if wait time has elapsed
             elapsed_time = current_time - self.parking_line_touch_start_time
             if elapsed_time >= self.wait_time_seconds:
-                # Wait time elapsed, turn GREEN
+                # Wait time elapsed = turn GREEN (regardless of human presence)
                 self.current_state = "GREEN"
                 self._handle_state_change("GREEN")
                 return self.current_state
             else:
-                # Still waiting, show YELLOW with countdown
-                remaining_time = int(self.wait_time_seconds - elapsed_time)
-                self.current_state = "YELLOW"  # Will show countdown in UI
-                # Don't call API again if already YELLOW (only on state change)
+                # Counter still running - show RED if human present, YELLOW if no human
+                # Note: RED can continue from previous state (human + not touching) into this state
+                if human_present:
+                    # Human present during countdown = show RED (violation)
+                    # Counter continues running in background, will switch to GREEN when complete
+                    self.current_state = "RED"
+                    self._handle_state_change("RED")
+                else:
+                    # No human during countdown = show YELLOW (counter running)
+                    remaining_time = int(self.wait_time_seconds - elapsed_time)
+                    self.current_state = "YELLOW"  # Will show countdown in UI
+                    self._handle_state_change("YELLOW")
                 return self.current_state
+        
+        # Rule 5: Truck in zone + NOT touching parking line + Human present = RED
+        # This is a violation - truck not properly parked and human in zone
+        if truck_in_zone and human_present:
+            # Human in zone + truck not touching line = violation, show RED
+            self.current_state = "RED"
+            self._handle_state_change("RED")
+            return self.current_state
         
         # Truck not touching line - use grace period before resetting timer
         if not truck_touching_line:
@@ -154,16 +174,11 @@ class DockManager:
                 self.parking_line_touch_start_time = None
                 self.not_touching_count = 0
         
-        # Rule 1 & 2: Truck in zone + NOT touching parking line
+        # Rule 6: Truck in zone + NOT touching parking line + NO human
         if truck_in_zone and not truck_touching_line:
-            if human_present:
-                # Rule 1: Violation
-                self.current_state = "RED"
-                self._handle_state_change("RED")
-            else:
-                # Rule 2: Warning
-                self.current_state = "YELLOW"
-                self._handle_state_change("YELLOW")
+            # Warning - truck not properly parked
+            self.current_state = "YELLOW"
+            self._handle_state_change("YELLOW")
             return self.current_state
         
         # Default: If truck exists but not in zone, consider it GREEN

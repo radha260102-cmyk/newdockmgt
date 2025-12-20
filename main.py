@@ -8,6 +8,35 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'dock_utils'))
 
+# Import all required libraries at build time for PyInstaller to detect them
+# This ensures all dependencies are included in the executable
+try:
+    import torch
+    import torchvision
+    import cv2
+    import numpy as np
+    from PIL import Image, ImageTk
+    import pandas as pd
+    import requests
+    import pymodbus
+    from pymodbus.client import ModbusTcpClient
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+    # Try to import yolov5 - this ensures PyInstaller includes it
+    try:
+        import yolov5
+    except ImportError:
+        pass  # Will use torch.hub instead
+    # Import ultralytics/yolov5 via torch.hub dependencies
+    try:
+        # This ensures torch.hub dependencies are available
+        import ultralytics
+    except ImportError:
+        pass
+except ImportError as e:
+    print(f"Warning: Some optional imports failed: {e}")
+    # Continue anyway - may be optional dependencies
+
 from src.detector import YOLODetector
 from src.dock_manager import DockManager
 from src.ui import DockManagementUI
@@ -20,6 +49,9 @@ def main():
     print("=" * 50)
     print("Dock Management System")
     print("=" * 50)
+    
+    # Load settings from file if it exists (MUST be before license check to use saved license key)
+    config.load_settings()
     
     # License validation - MUST pass before continuing (always enabled)
     try:
@@ -38,11 +70,14 @@ def main():
         traceback.print_exc()
         sys.exit(1)
     
-    # Check if model exists
-    if not os.path.exists(config.MODEL_PATH):
-        print(f"\nERROR: Model file not found at {config.MODEL_PATH}")
+    # Check if model exists (resolve path if relative)
+    model_path = config.MODEL_PATH
+    if model_path and not os.path.isabs(model_path):
+        model_path = config.get_resource_path(model_path)
+    if not os.path.exists(model_path):
+        print(f"\nERROR: Model file not found at {model_path}")
         print("Please ensure your YOLO model file is placed in the models/ directory")
-        print("and update MODEL_PATH in config.py if needed.")
+        print("and update MODEL_PATH in config.py or use Settings dialog if needed.")
         return
     
     try:

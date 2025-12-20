@@ -1,0 +1,80 @@
+{
+    "video_source": "2_edited.mp4",
+    "model_path": "models/best_doc4.pt",
+    "confidence_threshold": 0.5,
+    "use_gpu": true,
+    "license_key": "488668-B5FFC8-108E83-B72C63-201295-V3",
+    "show_license_expiry": false,
+    "yellow_api_url": "http://192.168.1.101/api/player?action=start&id=15&repeat=0&volume=2",
+    "red_api_url": "http://192.168.1.101/api/player?action=start&id=16&repeat=0&volume=2",
+    "stop_api_url": "http://192.168.1.101/api/player?action=stop",
+    "enable_api_calls": true,
+    "enable_plc": true,
+    "plc_host": "127.0.0.1",
+    "plc_port": 502,
+    "plc_green_coils": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    ],
+    "plc_red_coils": [
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    ],
+    "plc_yellow_coils": [
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false
+    ],
+    "parking_line_wait_time": 10,
+    "parking_line_grace_period": 50,
+    "batch_size": 2,
+    "batch_timeout": 0.005,
+    "enable_batch_processing": true,
+    "enable_multithreading": true,
+    "frame_skip": 0,
+    "zone_coordinates": [
+        [
+            632,
+            197
+        ],
+        [
+            941,
+            207
+        ],
+        [
+            1177,
+            1390
+        ],
+        [
+            193,
+            1343
+        ]
+    ],
+    "parking_line_points": [
+        [
+            239,
+            1241
+        ],
+        [
+            1157,
+            1276
+        ]
+    ]
+}

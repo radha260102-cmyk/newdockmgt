@@ -2,6 +2,7 @@
 YOLO Detection Module
 Handles object detection using YOLOv5 model
 """
+import os
 import cv2
 import numpy as np
 import torch
@@ -23,7 +24,12 @@ class YOLODetector:
             model_path: Path to YOLOv5 model file (.pt)
             zone_coordinates: Zone coordinates to filter detections (optional)
         """
-        self.model_path = model_path or config.MODEL_PATH
+        # Resolve model path relative to executable directory if relative
+        raw_path = model_path or config.MODEL_PATH
+        if raw_path and not os.path.isabs(raw_path):
+            self.model_path = config.get_resource_path(raw_path)
+        else:
+            self.model_path = raw_path
         self.model = None
         self.zone_coordinates = zone_coordinates or config.ZONE_COORDINATES
         self.load_model()

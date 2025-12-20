@@ -31,6 +31,35 @@ class ZoneConfigurator:
         self.scale_y = 1.0
         self.x_offset = 0
         self.y_offset = 0
+    
+    def _crop_frame(self, frame):
+        """
+        Crop frame to specified region to reduce frame size
+        Crop region defined by coordinates: (1987,0), (659,0), (659,1626), (1987,1626)
+        This crops to: x from 659 to 1987, y from 0 to 1626
+        The cropped frame becomes the final frame used throughout the system.
+        Zones configured on this cropped frame are already in the correct coordinate system.
+        """
+        if frame is None:
+            return frame
+        
+        # Crop coordinates: x1=659, y1=0, x2=1987, y2=1626
+        # Area to keep: rectangle defined by (1987,0), (659,0), (659,1626), (1987,1626)
+        x1, y1 = 659, 0
+        x2, y2 = 1987, 1626
+        
+        # Get frame dimensions
+        frame_height, frame_width = frame.shape[:2]
+        
+        # Ensure crop coordinates are within frame bounds
+        x1 = max(0, min(x1, frame_width))
+        y1 = max(0, min(y1, frame_height))
+        x2 = max(x1, min(x2, frame_width))
+        y2 = max(y1, min(y2, frame_height))
+        
+        # Crop the frame (reduce frame size by keeping only the specified region)
+        cropped_frame = frame[y1:y2, x1:x2]
+        return cropped_frame
         
     def load_config(self):
         """Load existing configuration from JSON"""
@@ -168,6 +197,9 @@ class ZoneConfigurator:
             print("Error: Could not read frame from video")
             return
         
+        # Crop frame to reduce size (same crop as in main application)
+        frame = self._crop_frame(frame)
+        
         self.original_frame = frame.copy()
         self.current_frame = frame
         
@@ -218,6 +250,8 @@ class ZoneConfigurator:
                 # Next frame
                 ret, frame = self.cap.read()
                 if ret:
+                    # Crop frame to reduce size (same crop as in main application)
+                    frame = self._crop_frame(frame)
                     self.original_frame = frame.copy()
                     self.current_frame = frame
                     self.draw_frame()
@@ -228,6 +262,8 @@ class ZoneConfigurator:
                 self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ret, frame = self.cap.read()
                 if ret:
+                    # Crop frame to reduce size (same crop as in main application)
+                    frame = self._crop_frame(frame)
                     self.original_frame = frame.copy()
                     self.current_frame = frame
                     self.draw_frame()
