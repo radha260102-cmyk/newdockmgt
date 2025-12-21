@@ -1617,6 +1617,50 @@ class DockManagementUI:
         ttk.Label(zone_frame, text="Note: Use 'python configure_zones.py' for visual configuration", 
                  font=("Arial", 8), foreground="blue").grid(row=6, column=0, sticky=tk.W, pady=5)
         
+        # Human Zone Detection Points Configuration
+        row = 7
+        ttk.Separator(zone_frame, orient=tk.HORIZONTAL).grid(row=row, column=0, sticky=(tk.W, tk.E), pady=(15, 10))
+        row += 1
+        
+        ttk.Label(zone_frame, text="Human Zone Detection Points:", font=("Arial", 9, "bold")).grid(row=row, column=0, sticky=tk.W, pady=5)
+        ttk.Label(zone_frame, text="Select which parts of human bounding box to check for parking zone inclusion", 
+                 font=("Arial", 8), foreground="gray").grid(row=row+1, column=0, sticky=tk.W, pady=2)
+        row += 2
+        
+        # Get current human zone check points configuration
+        human_check_points = current_settings.get('human_zone_check_points', {
+            'top_left': True,
+            'top_right': True,
+            'bottom_right': True,
+            'bottom_left': True,
+            'center': True
+        })
+        
+        # Create checkboxes for each point
+        settings_vars['human_zone_check_points'] = {}
+        check_points_frame = ttk.Frame(zone_frame)
+        check_points_frame.grid(row=row, column=0, sticky=tk.W, pady=5)
+        
+        settings_vars['human_zone_check_points']['top_left'] = tk.BooleanVar(value=human_check_points.get('top_left', True))
+        ttk.Checkbutton(check_points_frame, text="Top-left corner (x1, y1)", 
+                       variable=settings_vars['human_zone_check_points']['top_left']).grid(row=0, column=0, sticky=tk.W, pady=2)
+        
+        settings_vars['human_zone_check_points']['top_right'] = tk.BooleanVar(value=human_check_points.get('top_right', True))
+        ttk.Checkbutton(check_points_frame, text="Top-right corner (x2, y1)", 
+                       variable=settings_vars['human_zone_check_points']['top_right']).grid(row=1, column=0, sticky=tk.W, pady=2)
+        
+        settings_vars['human_zone_check_points']['bottom_right'] = tk.BooleanVar(value=human_check_points.get('bottom_right', True))
+        ttk.Checkbutton(check_points_frame, text="Bottom-right corner (x2, y2)", 
+                       variable=settings_vars['human_zone_check_points']['bottom_right']).grid(row=2, column=0, sticky=tk.W, pady=2)
+        
+        settings_vars['human_zone_check_points']['bottom_left'] = tk.BooleanVar(value=human_check_points.get('bottom_left', True))
+        ttk.Checkbutton(check_points_frame, text="Bottom-left corner (x1, y2)", 
+                       variable=settings_vars['human_zone_check_points']['bottom_left']).grid(row=3, column=0, sticky=tk.W, pady=2)
+        
+        settings_vars['human_zone_check_points']['center'] = tk.BooleanVar(value=human_check_points.get('center', True))
+        ttk.Checkbutton(check_points_frame, text="Center point ((x1+x2)/2, (y1+y2)/2)", 
+                       variable=settings_vars['human_zone_check_points']['center']).grid(row=4, column=0, sticky=tk.W, pady=2)
+        
         # Buttons
         button_frame = ttk.Frame(settings_window)
         button_frame.pack(fill=tk.X, padx=10, pady=10)
@@ -1658,6 +1702,15 @@ class DockManagementUI:
                     new_settings['zone_coordinates'] = json.loads(zone_coords_text)
                 if parking_line_text:
                     new_settings['parking_line_points'] = json.loads(parking_line_text)
+                
+                # Human Zone Check Points
+                new_settings['human_zone_check_points'] = {
+                    'top_left': settings_vars['human_zone_check_points']['top_left'].get(),
+                    'top_right': settings_vars['human_zone_check_points']['top_right'].get(),
+                    'bottom_right': settings_vars['human_zone_check_points']['bottom_right'].get(),
+                    'bottom_left': settings_vars['human_zone_check_points']['bottom_left'].get(),
+                    'center': settings_vars['human_zone_check_points']['center'].get()
+                }
                 
                 # Save to file
                 if config.save_settings_to_file(new_settings):

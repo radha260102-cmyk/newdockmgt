@@ -56,6 +56,16 @@ PARKING_LINE_POINTS = None  # Will be loaded from JSON or set manually
 PARKING_LINE_WAIT_TIME = 10  # Wait time in seconds before turning green after truck touches parking line
 PARKING_LINE_GRACE_PERIOD = 50  # Number of consecutive "not touching" detections before resetting timer (prevents timer reset due to frame skipping or detection flicker)
 
+# Human Zone Detection Configuration
+# Which parts of human bounding box to check for parking zone inclusion
+HUMAN_ZONE_CHECK_POINTS = {
+    'top_left': True,      # Check top-left corner (x1, y1)
+    'top_right': True,     # Check top-right corner (x2, y1)
+    'bottom_right': True,  # Check bottom-right corner (x2, y2)
+    'bottom_left': True,   # Check bottom-left corner (x1, y2)
+    'center': True         # Check center point ((x1+x2)/2, (y1+y2)/2)
+}
+
 # Load zone configuration from JSON if it exists
 def load_zone_config():
     """Load zone and parking line configuration from JSON file"""
@@ -107,7 +117,7 @@ if ENABLE_BATCH_PROCESSING and BATCH_SIZE < 1:
 
 # Video Source
 #VIDEO_SOURCE = "rtsp://admin:india123@192.168.1.64:554/Streaming/Channels/101?transportmode=unicast&streamtype=main&transport=tcp"  # 0 for webcam, or path to video file
-VIDEO_SOURCE = "C:/Yash/Cordova/DockProjectTata/3.mp4"  # 0 for webcam, or path to video file
+VIDEO_SOURCE = "C:/Users/yashp/OneDrive/Desktop/Final/newdockmgt/crop_3.mp4"  # 0 for webcam, or path to video file
 
 # API Configuration for Audio/Visual Alerts (Speaker)
 YELLOW_API_URL = "http://192.168.1.101/api/player?action=start&id=15&repeat=0&volume=2"  # API to call when YELLOW light glows
@@ -151,6 +161,7 @@ def load_settings():
             global PARKING_LINE_WAIT_TIME, PARKING_LINE_GRACE_PERIOD
             global BATCH_SIZE, BATCH_TIMEOUT, ENABLE_BATCH_PROCESSING
             global ENABLE_MULTITHREADING, FRAME_SKIP, SHOW_LICENSE_EXPIRY
+            global HUMAN_ZONE_CHECK_POINTS
             
             if 'video_source' in settings:
                 VIDEO_SOURCE = settings['video_source']
@@ -207,6 +218,8 @@ def load_settings():
                 FRAME_SKIP = int(settings['frame_skip'])
             if 'show_license_expiry' in settings:
                 SHOW_LICENSE_EXPIRY = bool(settings['show_license_expiry'])
+            if 'human_zone_check_points' in settings:
+                HUMAN_ZONE_CHECK_POINTS = settings['human_zone_check_points']
             
             print(f"Settings loaded from {SETTINGS_FILE}")
             return True
@@ -267,7 +280,8 @@ def get_current_settings():
         'enable_multithreading': ENABLE_MULTITHREADING,
         'frame_skip': FRAME_SKIP,
         'zone_coordinates': zone_coords,
-        'parking_line_points': parking_line_points
+        'parking_line_points': parking_line_points,
+        'human_zone_check_points': HUMAN_ZONE_CHECK_POINTS
     }
 
 def update_settings_from_dict(settings_dict):
@@ -279,6 +293,7 @@ def update_settings_from_dict(settings_dict):
     global PARKING_LINE_WAIT_TIME, PARKING_LINE_GRACE_PERIOD
     global BATCH_SIZE, BATCH_TIMEOUT, ENABLE_BATCH_PROCESSING
     global ENABLE_MULTITHREADING, FRAME_SKIP, SHOW_LICENSE_EXPIRY
+    global HUMAN_ZONE_CHECK_POINTS
     
     if 'video_source' in settings_dict:
         VIDEO_SOURCE = settings_dict['video_source']
@@ -330,6 +345,8 @@ def update_settings_from_dict(settings_dict):
         FRAME_SKIP = int(settings_dict['frame_skip'])
     if 'show_license_expiry' in settings_dict:
         SHOW_LICENSE_EXPIRY = bool(settings_dict['show_license_expiry'])
+    if 'human_zone_check_points' in settings_dict:
+        HUMAN_ZONE_CHECK_POINTS = settings_dict['human_zone_check_points']
     
     # Save zone configuration if provided
     if 'zone_coordinates' in settings_dict or 'parking_line_points' in settings_dict:

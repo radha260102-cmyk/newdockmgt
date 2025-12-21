@@ -131,3 +131,69 @@ def is_bbox_in_zone(bbox, zone_coordinates):
             return True
     
     return False
+
+
+def is_human_bbox_in_zone(bbox, zone_coordinates, check_points_config):
+    """
+    Check if a human bounding box is inside the zone based on configurable check points
+    Args:
+        bbox: [x1, y1, x2, y2] bounding box coordinates
+        zone_coordinates: List of (x, y) tuples defining polygon vertices
+        check_points_config: Dictionary with keys:
+            - 'top_left': bool - Check top-left corner (x1, y1)
+            - 'top_right': bool - Check top-right corner (x2, y1)
+            - 'bottom_right': bool - Check bottom-right corner (x2, y2)
+            - 'bottom_left': bool - Check bottom-left corner (x1, y2)
+            - 'center': bool - Check center point ((x1+x2)/2, (y1+y2)/2)
+    Returns:
+        bool: True if any enabled check point is inside the zone
+    """
+    if zone_coordinates is None or len(zone_coordinates) < 3:
+        return True  # If no zone configured, allow all detections
+    
+    # Default: if no config provided, use all points (backward compatibility)
+    if check_points_config is None:
+        check_points_config = {
+            'top_left': True,
+            'top_right': True,
+            'bottom_right': True,
+            'bottom_left': True,
+            'center': True
+        }
+    
+    x1, y1, x2, y2 = bbox
+    
+    # Build list of points to check based on configuration
+    points_to_check = []
+    
+    if check_points_config.get('top_left', False):
+        points_to_check.append((x1, y1))  # Top-left corner
+    
+    if check_points_config.get('top_right', False):
+        points_to_check.append((x2, y1))  # Top-right corner
+    
+    if check_points_config.get('bottom_right', False):
+        points_to_check.append((x2, y2))  # Bottom-right corner
+    
+    if check_points_config.get('bottom_left', False):
+        points_to_check.append((x1, y2))  # Bottom-left corner
+    
+    if check_points_config.get('center', False):
+        points_to_check.append(((x1 + x2) / 2, (y1 + y2) / 2))  # Center point
+    
+    # If no points are enabled, default to checking all (safety fallback)
+    if len(points_to_check) == 0:
+        points_to_check = [
+            (x1, y1),  # Top-left
+            (x2, y1),  # Top-right
+            (x2, y2),  # Bottom-right
+            (x1, y2),  # Bottom-left
+            ((x1 + x2) / 2, (y1 + y2) / 2)  # Center
+        ]
+    
+    # Check if any enabled point is inside the zone
+    for point in points_to_check:
+        if is_point_in_zone(point, zone_coordinates):
+            return True
+    
+    return False

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import warnings
 import config
-from dock_utils.helpers import is_bbox_in_zone
+from dock_utils.helpers import is_bbox_in_zone, is_human_bbox_in_zone
 
 # Suppress YOLOv5 deprecation warnings
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*torch.cuda.amp.autocast.*')
@@ -152,8 +152,16 @@ class YOLODetector:
                 
                 # Filter: Only include detections inside the zone
                 if self.zone_coordinates and len(self.zone_coordinates) >= 3:
-                    if not is_bbox_in_zone([x1, y1, x2, y2], self.zone_coordinates):
-                        continue  # Skip detections outside the zone
+                    # For humans, use configurable check points; for others, use standard method
+                    if cls_id == config.CLASS_IDS['person']:
+                        # Use human-specific zone checking with configurable points
+                        human_check_config = getattr(config, 'HUMAN_ZONE_CHECK_POINTS', None)
+                        if not is_human_bbox_in_zone([x1, y1, x2, y2], self.zone_coordinates, human_check_config):
+                            continue  # Skip detections outside the zone
+                    else:
+                        # For trucks and other objects, use standard method
+                        if not is_bbox_in_zone([x1, y1, x2, y2], self.zone_coordinates):
+                            continue  # Skip detections outside the zone
                 
                 # Categorize detections by class ID
                 if cls_id == config.CLASS_IDS['truck']:  # Class 2 is truck
@@ -186,8 +194,16 @@ class YOLODetector:
                         
                         # Filter: Only include detections inside the zone
                         if self.zone_coordinates and len(self.zone_coordinates) >= 3:
-                            if not is_bbox_in_zone([int(x1), int(y1), int(x2), int(y2)], self.zone_coordinates):
-                                continue  # Skip detections outside the zone
+                            # For humans, use configurable check points; for others, use standard method
+                            if cls_id == config.CLASS_IDS['person']:
+                                # Use human-specific zone checking with configurable points
+                                human_check_config = getattr(config, 'HUMAN_ZONE_CHECK_POINTS', None)
+                                if not is_human_bbox_in_zone([int(x1), int(y1), int(x2), int(y2)], self.zone_coordinates, human_check_config):
+                                    continue  # Skip detections outside the zone
+                            else:
+                                # For trucks and other objects, use standard method
+                                if not is_bbox_in_zone([int(x1), int(y1), int(x2), int(y2)], self.zone_coordinates):
+                                    continue  # Skip detections outside the zone
                         
                         if cls_id == config.CLASS_IDS['truck']:
                             detections['trucks'].append(bbox)
@@ -247,8 +263,16 @@ class YOLODetector:
                     
                     # Filter: Only include detections inside the zone
                     if self.zone_coordinates and len(self.zone_coordinates) >= 3:
-                        if not is_bbox_in_zone([x1, y1, x2, y2], self.zone_coordinates):
-                            continue  # Skip detections outside the zone
+                        # For humans, use configurable check points; for others, use standard method
+                        if cls_id == config.CLASS_IDS['person']:
+                            # Use human-specific zone checking with configurable points
+                            human_check_config = getattr(config, 'HUMAN_ZONE_CHECK_POINTS', None)
+                            if not is_human_bbox_in_zone([x1, y1, x2, y2], self.zone_coordinates, human_check_config):
+                                continue  # Skip detections outside the zone
+                        else:
+                            # For trucks and other objects, use standard method
+                            if not is_bbox_in_zone([x1, y1, x2, y2], self.zone_coordinates):
+                                continue  # Skip detections outside the zone
                     
                     # Categorize detections by class ID
                     if cls_id == config.CLASS_IDS['truck']:  # Class 2 is truck
@@ -289,8 +313,16 @@ class YOLODetector:
                                 
                                 # Filter: Only include detections inside the zone
                                 if self.zone_coordinates and len(self.zone_coordinates) >= 3:
-                                    if not is_bbox_in_zone([int(x1), int(y1), int(x2), int(y2)], self.zone_coordinates):
-                                        continue  # Skip detections outside the zone
+                                    # For humans, use configurable check points; for others, use standard method
+                                    if cls_id == config.CLASS_IDS['person']:
+                                        # Use human-specific zone checking with configurable points
+                                        human_check_config = getattr(config, 'HUMAN_ZONE_CHECK_POINTS', None)
+                                        if not is_human_bbox_in_zone([int(x1), int(y1), int(x2), int(y2)], self.zone_coordinates, human_check_config):
+                                            continue  # Skip detections outside the zone
+                                    else:
+                                        # For trucks and other objects, use standard method
+                                        if not is_bbox_in_zone([int(x1), int(y1), int(x2), int(y2)], self.zone_coordinates):
+                                            continue  # Skip detections outside the zone
                                 
                                 if cls_id == config.CLASS_IDS['truck']:
                                     detections['trucks'].append(bbox)

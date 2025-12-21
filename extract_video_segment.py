@@ -110,10 +110,10 @@ def extract_video_segment(input_video, output_video, start_minutes, end_minutes)
 
 def main():
     """Main function"""
-    input_video = "2.mp4"
-    output_video = "3.mp4"
-    start_minutes = 30
-    end_minutes = 33
+    input_video = "C:/Users/yashp/OneDrive/Desktop/Tata_Dock4/good_video/4.mp4"
+    output_video = "C:/Users/yashp/OneDrive/Desktop/Tata_Dock4/good_video/crop_4.mp4"
+    start_minutes = 15
+    end_minutes = 19
     
     # Allow command line arguments
     if len(sys.argv) >= 2:
