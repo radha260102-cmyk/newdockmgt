@@ -258,12 +258,13 @@ class DockManager:
         thread = threading.Thread(target=make_request, daemon=True)
         thread.start()
     
-    def _call_dock_status_api(self, vehicle_status, human_presence, notes):
+    def _call_dock_status_api(self, vehicle_status, human_presence, dock_status, notes):
         """
         Call dock status API endpoint with JSON payload in a separate thread (non-blocking)
         Args:
             vehicle_status: "placed" or "not_placed"
             human_presence: "present" or "not_present"
+            dock_status: "RED", "YELLOW", or "GREEN"
             notes: Descriptive notes string
         """
         def make_request():
@@ -271,6 +272,7 @@ class DockManager:
                 payload = {
                     "vehicle_status": vehicle_status,
                     "human_presence": human_presence,
+                    "dock_status": dock_status,
                     "notes": notes
                 }
                 data = json.dumps(payload).encode('utf-8')
@@ -350,7 +352,7 @@ class DockManager:
         
         # Call dock status API if enabled (new functionality)
         if config.ENABLE_DOCK_STATUS_API:
-            self._call_dock_status_api(vehicle_status, human_presence_str, notes)
+            self._call_dock_status_api(vehicle_status, human_presence_str, new_state, notes)
         
         # Update PLC coils (works independently of API calls, runs in separate thread)
         if self.plc_manager:
