@@ -1455,6 +1455,13 @@ class DockManagementUI:
         ttk.Entry(api_frame, textvariable=settings_vars['stop_api_url'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
         row += 1
         
+        # Successfully Parked API URL
+        ttk.Label(api_frame, text="Successfully Parked API URL:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        settings_vars['successfully_parked_api_url'] = tk.StringVar(value=current_settings.get('successfully_parked_api_url', 'http://192.168.1.101/api/player?action=start&id=17&repeat=0&volume=2'))
+        ttk.Entry(api_frame, textvariable=settings_vars['successfully_parked_api_url'], width=60).grid(row=row, column=1, pady=5, sticky=(tk.W, tk.E))
+        ttk.Label(api_frame, text="Called when wait time completes and truck turns GREEN", font=("Arial", 8), foreground="gray").grid(row=row+1, column=1, sticky=tk.W)
+        row += 2
+        
         # Separator
         ttk.Separator(api_frame, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
         row += 1
@@ -1678,6 +1685,7 @@ class DockManagementUI:
                 new_settings['yellow_api_url'] = settings_vars['yellow_api_url'].get()
                 new_settings['red_api_url'] = settings_vars['red_api_url'].get()
                 new_settings['stop_api_url'] = settings_vars['stop_api_url'].get()
+                new_settings['successfully_parked_api_url'] = settings_vars['successfully_parked_api_url'].get()
                 new_settings['enable_api_calls'] = settings_vars['enable_api_calls'].get()
                 new_settings['dock_status_api_url'] = settings_vars['dock_status_api_url'].get()
                 new_settings['enable_dock_status_api'] = settings_vars['enable_dock_status_api'].get()

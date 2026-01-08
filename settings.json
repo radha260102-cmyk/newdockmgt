@@ -1,15 +1,16 @@
 {
-    "video_source": "C:/Users/yashp/OneDrive/Desktop/Final/newdockmgt/crop_4.mp4",
-    "model_path": "C:/Users/yashp/OneDrive/Desktop/Final/newdockmgt/models/best_doc4.pt",
+    "video_source": "C:/Yash/Cordova/DockProjectTata/HumanBackendLogicNew/crop_3.mp4",
+    "model_path": "C:/Yash/Cordova/DockProjectTata/HumanBackendLogicNew/models/best_doc4.pt",
     "confidence_threshold": 0.5,
     "use_gpu": true,
     "license_key": "488668-B5FFC8-108E83-B72C63-201295-V3",
-    "show_license_expiry": true,
+    "show_license_expiry": false,
     "yellow_api_url": "http://192.168.1.101/api/player?action=start&id=15&repeat=0&volume=2",
     "red_api_url": "http://192.168.1.101/api/player?action=start&id=16&repeat=0&volume=2",
     "stop_api_url": "http://192.168.1.101/api/player?action=stop",
+    "successfully_parked_api_url": "http://192.168.1.101/api/player?action=start&id=17&repeat=0&volume=2",
     "enable_api_calls": true,
-    "dock_status_api_url": "http://127.0.0.1:3041/dock1/status",
+    "dock_status_api_url": "http://192.168.0.110:3041/dock1/status",
     "enable_dock_status_api": true,
     "enable_plc": true,
     "plc_host": "127.0.0.1",
@@ -53,20 +54,20 @@
     "frame_skip": 0,
     "zone_coordinates": [
         [
-            622,
-            213
+            628,
+            211
         ],
         [
             947,
-            207
+            211
         ],
         [
-            1212,
-            1502
+            1181,
+            1457
         ],
         [
-            162,
-            1453
+            180,
+            1406
         ]
     ],
     "parking_line_points": [

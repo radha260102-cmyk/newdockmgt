@@ -331,6 +331,15 @@ class DockManager:
                         truck_touching_line = True
                         break
         
+        # Check if this is a successful parking (GREEN after wait time completed)
+        # This happens when: previous state was RED/YELLOW (truck at line, counter running), 
+        # and now it's GREEN with truck still at line (wait time completed)
+        is_successful_parking = False
+        if new_state == "GREEN" and self.previous_state in ["RED", "YELLOW"]:
+            if truck_in_zone and truck_touching_line:
+                # Wait time just completed - truck successfully parked
+                is_successful_parking = True
+        
         # Generate notes based on state
         notes = self._generate_notes(new_state, truck_present, human_present, truck_in_zone, truck_touching_line)
         
@@ -347,8 +356,12 @@ class DockManager:
                 # Call YELLOW API when yellow light glows
                 self._call_api(config.YELLOW_API_URL)
             elif new_state == "GREEN":
-                # Call STOP API when green light glows
+                # Call STOP API when green light glows (stop all alerts)
                 self._call_api(config.STOP_API_URL)
+                
+                # Special case: If truck successfully parked (wait time completed), call success API
+                if is_successful_parking:
+                    self._call_api(config.SUCCESSFULLY_PARKED_API_URL)
         
         # Call dock status API if enabled (new functionality)
         if config.ENABLE_DOCK_STATUS_API:

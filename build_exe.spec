@@ -57,6 +57,15 @@ hiddenimports = [
     'logging',
     'logging.config',  # Required for YOLOv5/utils
     'logging.handlers',
+    'cryptography',  # For encryption
+    'cryptography.fernet',  # Fernet encryption
+    'cryptography.hazmat',  # Cryptographic primitives
+    'cryptography.hazmat.primitives',  # Primitives
+    'cryptography.hazmat.primitives.hashes',  # Hash functions
+    'cryptography.hazmat.primitives.kdf',  # Key derivation
+    'cryptography.hazmat.primitives.kdf.pbkdf2',  # PBKDF2
+    'cryptography.hazmat.backends',  # Backends
+    'cryptography.hazmat.backends.default_backend',  # Default backend
     'ultralytics',  # For YOLOv5 via torch.hub
     'ultralytics.yolo',  # YOLOv5 submodules
     'ultralytics.models',  # YOLOv5 models
@@ -154,6 +163,14 @@ try:
     import tkinter
     import logging  # Ensure logging is imported
     import logging.config  # Ensure logging.config is imported
+    # Import cryptography to ensure it's bundled
+    try:
+        from cryptography.fernet import Fernet
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        print("✓ cryptography package found")
+    except ImportError:
+        print("⚠ WARNING: cryptography package not found. Install it with: pip install cryptography")
     # Try to import yolov5 at build time (CRITICAL - ensures it's bundled)
     try:
         import yolov5

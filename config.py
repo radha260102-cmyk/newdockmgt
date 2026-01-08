@@ -123,6 +123,7 @@ VIDEO_SOURCE = "C:/Users/yashp/OneDrive/Desktop/Final/newdockmgt/crop_3.mp4"  # 
 YELLOW_API_URL = "http://192.168.1.101/api/player?action=start&id=15&repeat=0&volume=2"  # API to call when YELLOW light glows
 RED_API_URL = "http://192.168.1.101/api/player?action=start&id=16&repeat=0&volume=2"  # API to call when RED light glows
 STOP_API_URL = "http://192.168.1.101/api/player?action=stop"  # API to call when GREEN light glows (stop all alerts)
+SUCCESSFULLY_PARKED_API_URL = "http://192.168.1.101/api/player?action=start&id=17&repeat=0&volume=2"  # API to call when truck successfully parked (wait time completed and turned GREEN)
 ENABLE_API_CALLS = True  # Enable/disable API calls
 
 # Dock Status API Configuration
@@ -145,16 +146,38 @@ PLC_YELLOW_LIGHT_COILS = [False, False, True, False, False, False, False, False]
 SETTINGS_FILE = "settings.json"  # Relative to BASE_DIR
 
 def load_settings():
-    """Load settings from JSON file if it exists"""
-    settings_path = get_resource_path(SETTINGS_FILE)
-    if os.path.exists(settings_path):
+    """Load settings from file (encrypted when running as exe)"""
+    if getattr(sys, 'frozen', False):
+        # Running as exe - try encrypted storage first
+        from dock_utils.encrypted_storage import load_encrypted_data
+        settings = load_encrypted_data(SETTINGS_FILE)
+        if settings is None:
+            # Fallback to plain JSON if encrypted file doesn't exist (migration)
+            settings_path = get_resource_path(SETTINGS_FILE)
+            if os.path.exists(settings_path):
+                try:
+                    with open(settings_path, 'r') as f:
+                        settings = json.load(f)
+                except:
+                    return False
+            else:
+                return False
+    else:
+        # Development mode - load from plain JSON
+        settings_path = get_resource_path(SETTINGS_FILE)
+        if not os.path.exists(settings_path):
+            return False
         try:
             with open(settings_path, 'r') as f:
                 settings = json.load(f)
-                
+        except:
+            return False
+    
+    if settings:
+        try:
             # Update config values from settings file
             global VIDEO_SOURCE, MODEL_PATH, CONFIDENCE_THRESHOLD, USE_GPU, LICENSE_KEY
-            global YELLOW_API_URL, RED_API_URL, STOP_API_URL, ENABLE_API_CALLS
+            global YELLOW_API_URL, RED_API_URL, STOP_API_URL, SUCCESSFULLY_PARKED_API_URL, ENABLE_API_CALLS
             global DOCK_STATUS_API_URL, ENABLE_DOCK_STATUS_API
             global ENABLE_PLC, PLC_HOST, PLC_PORT
             global PLC_GREEN_LIGHT_COILS, PLC_RED_LIGHT_COILS, PLC_YELLOW_LIGHT_COILS
@@ -184,6 +207,8 @@ def load_settings():
                 RED_API_URL = settings['red_api_url']
             if 'stop_api_url' in settings:
                 STOP_API_URL = settings['stop_api_url']
+            if 'successfully_parked_api_url' in settings:
+                SUCCESSFULLY_PARKED_API_URL = settings['successfully_parked_api_url']
             if 'enable_api_calls' in settings:
                 ENABLE_API_CALLS = bool(settings['enable_api_calls'])
             if 'dock_status_api_url' in settings:
@@ -221,22 +246,33 @@ def load_settings():
             if 'human_zone_check_points' in settings:
                 HUMAN_ZONE_CHECK_POINTS = settings['human_zone_check_points']
             
-            print(f"Settings loaded from {SETTINGS_FILE}")
+            if getattr(sys, 'frozen', False):
+                print(f"Settings loaded from encrypted storage")
+            else:
+                print(f"Settings loaded from {SETTINGS_FILE}")
             return True
         except Exception as e:
-            print(f"Warning: Could not load settings from {SETTINGS_FILE}: {e}")
+            print(f"Warning: Could not load settings: {e}")
+            return False
+    
     return False
 
 def save_settings_to_file(settings_dict):
-    """Save settings dictionary to JSON file"""
+    """Save settings dictionary to file (encrypted when running as exe)"""
     try:
-        settings_path = get_resource_path(SETTINGS_FILE)
-        with open(settings_path, 'w') as f:
-            json.dump(settings_dict, f, indent=4)
-        print(f"Settings saved to {settings_path}")
-        return True
+        if getattr(sys, 'frozen', False):
+            # Running as exe - use encrypted storage
+            from dock_utils.encrypted_storage import save_encrypted_data
+            return save_encrypted_data(settings_dict, SETTINGS_FILE)
+        else:
+            # Development mode - save as plain JSON
+            settings_path = get_resource_path(SETTINGS_FILE)
+            with open(settings_path, 'w') as f:
+                json.dump(settings_dict, f, indent=4)
+            print(f"Settings saved to {settings_path}")
+            return True
     except Exception as e:
-        print(f"Error saving settings to {settings_path}: {e}")
+        print(f"Error saving settings: {e}")
         return False
 
 def get_current_settings():
@@ -263,6 +299,7 @@ def get_current_settings():
         'yellow_api_url': YELLOW_API_URL,
         'red_api_url': RED_API_URL,
         'stop_api_url': STOP_API_URL,
+        'successfully_parked_api_url': SUCCESSFULLY_PARKED_API_URL,
         'enable_api_calls': ENABLE_API_CALLS,
         'dock_status_api_url': DOCK_STATUS_API_URL,
         'enable_dock_status_api': ENABLE_DOCK_STATUS_API,
@@ -311,6 +348,8 @@ def update_settings_from_dict(settings_dict):
         RED_API_URL = settings_dict['red_api_url']
     if 'stop_api_url' in settings_dict:
         STOP_API_URL = settings_dict['stop_api_url']
+    if 'successfully_parked_api_url' in settings_dict:
+        SUCCESSFULLY_PARKED_API_URL = settings_dict['successfully_parked_api_url']
     if 'enable_api_calls' in settings_dict:
         ENABLE_API_CALLS = bool(settings_dict['enable_api_calls'])
     if 'dock_status_api_url' in settings_dict:

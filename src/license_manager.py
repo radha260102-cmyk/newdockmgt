@@ -21,7 +21,12 @@ class LicenseManager:
             cache_file: Path to cache file for offline license data
         """
         self.license_key = license_key
-        self.cache_file = cache_file
+        # Resolve cache file path relative to exe directory when frozen
+        if getattr(sys, 'frozen', False):
+            import config
+            self.cache_file = config.get_resource_path(cache_file)
+        else:
+            self.cache_file = cache_file
         self.license_data = None
         self.api_url = "https://api.keygen.sh/v1/accounts/radha260102/licenses/actions/validate-key"
         self.api_headers = {
@@ -305,7 +310,7 @@ class LicenseManager:
     
     def save_to_cache(self, license_data):
         """
-        Save license data to cache file
+        Save license data to cache file (encrypted when running as exe)
         Args:
             license_data: License information dict
         """
@@ -320,30 +325,50 @@ class LicenseManager:
                 'raw_data': license_data.get('raw_data', {})
             }
             
-            with open(self.cache_file, 'w') as f:
-                json.dump(cache_data, f, indent=2)
-            
-            print(f"License data cached to {self.cache_file}")
+            if getattr(sys, 'frozen', False):
+                # Running as exe - use encrypted storage
+                from dock_utils.encrypted_storage import save_encrypted_data
+                save_encrypted_data(cache_data, self.cache_file)
+            else:
+                # Development mode - save as plain JSON
+                with open(self.cache_file, 'w') as f:
+                    json.dump(cache_data, f, indent=2)
+                print(f"License data cached to {self.cache_file}")
             
         except Exception as e:
             print(f"Warning: Could not save license cache: {e}")
     
     def load_from_cache(self):
         """
-        Load license data from cache file
+        Load license data from cache file (encrypted when running as exe)
         Returns:
             dict: Cached license data or None
         """
-        if not os.path.exists(self.cache_file):
+        if getattr(sys, 'frozen', False):
+            # Running as exe - try encrypted storage first
+            from dock_utils.encrypted_storage import load_encrypted_data
+            cache_data = load_encrypted_data(self.cache_file)
+            if cache_data is not None:
+                return cache_data
+            # Fallback to plain JSON if encrypted file doesn't exist (migration)
+            if os.path.exists(self.cache_file):
+                try:
+                    with open(self.cache_file, 'r') as f:
+                        return json.load(f)
+                except:
+                    return None
             return None
-        
-        try:
-            with open(self.cache_file, 'r') as f:
-                cache_data = json.load(f)
-            return cache_data
-        except Exception as e:
-            print(f"Warning: Could not load license cache: {e}")
-            return None
+        else:
+            # Development mode - load from plain JSON
+            if not os.path.exists(self.cache_file):
+                return None
+            try:
+                with open(self.cache_file, 'r') as f:
+                    cache_data = json.load(f)
+                return cache_data
+            except Exception as e:
+                print(f"Warning: Could not load license cache: {e}")
+                return None
     
     def validate_from_cache(self):
         """
