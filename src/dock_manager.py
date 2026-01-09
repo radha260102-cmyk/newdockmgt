@@ -356,11 +356,15 @@ class DockManager:
                 # Call YELLOW API when yellow light glows
                 self._call_api(config.YELLOW_API_URL)
             elif new_state == "GREEN":
-                # Call STOP API when green light glows (stop all alerts)
+                # ALWAYS call STOP API first when green light glows (stop all alerts)
                 self._call_api(config.STOP_API_URL)
                 
                 # Special case: If truck successfully parked (wait time completed), call success API
+                # This is called AFTER STOP to ensure alerts are stopped first
                 if is_successful_parking:
+                    # Add a small delay to ensure STOP completes before success sound
+                    import time
+                    time.sleep(0.1)  # 100ms delay to ensure STOP API completes
                     self._call_api(config.SUCCESSFULLY_PARKED_API_URL)
         
         # Call dock status API if enabled (new functionality)
